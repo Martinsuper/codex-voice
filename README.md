@@ -66,6 +66,10 @@ python3 scripts/verify_app.py '.build/Codex 语音提醒.app'
 
 应用位于 `.build/`，DMG、ZIP 和校验值位于 `dist/`。构建仅解包官方 Python 安装器，不向系统安装 Python。默认使用临时签名；有 Developer ID 证书时可传 `--identity`，正式分发还需要按 Apple 流程完成签名、公证与验证。
 
+## 项目目录
+
+以本目录作为后续开发和 GitHub 同步的仓库根目录。源码、测试、构建脚本与文档正常跟随 Git；安装包通过 Releases 发布，本机资料和缓存保留在已忽略的本地目录中。详见 [项目目录与后续开发](docs/PROJECT_LAYOUT.md)。
+
 ## 参考与第三方运行环境
 
 - [OpenAI Docs：Hooks 与信任审核](https://learn.chatgpt.com/docs/hooks)

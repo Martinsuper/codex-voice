@@ -9,3 +9,6 @@ __pycache__/
 *.p12
 *.mobileprovision
 *.key
+
+# Local archives and machine-specific working data
+local/
