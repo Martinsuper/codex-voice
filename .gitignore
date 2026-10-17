@@ -1,0 +1,11 @@
+.DS_Store
+.build/
+.build-cache/
+dist/
+__pycache__/
+*.pyc
+*.egg-info/
+.env
+*.p12
+*.mobileprovision
+*.key

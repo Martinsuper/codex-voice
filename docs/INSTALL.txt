@@ -1,0 +1,30 @@
+Codex 语音提醒 — 安装与使用
+
+1. 将“Codex 语音提醒.app”拖入 Applications（应用程序）文件夹。
+2. 从应用程序或 Spotlight 搜索“Codex 语音提醒”并打开。
+3. 点击菜单栏波形图标打开面板。底部设备名可选择播报扬声器。
+4. 在设置中点击“连接 Codex”，审阅说明后安装观察器。
+5. 在 Codex CLI 的 /hooks 中检查并信任新增的5个提醒观察器。
+   应用不会自动信任 Hook，也不会代替你批准 Codex 的操作。
+6. 可以点击“试听一下”测试声音；听到后点“已接手”停止。
+
+误退出后：再次从应用程序或 Spotlight 打开即可。
+登录自启：打开设置，启用“登录后自动启动”。
+全部接手后面板会自动收起，菜单栏继续运行；有新提醒时再出现。
+
+适用范围：macOS 13 及以上，内含 Apple 芯片与 Intel 两种架构。
+已在 Apple 芯片 Mac 上验证；Intel 和较旧系统仍需实机验收。
+无需安装 Python、Homebrew，也不需要填写 API Key。
+需要本机已安装并使用支持 Hooks 的 Codex。当前支持本地任务，
+云端和远程执行环境不保证覆盖。Codex 升级后需重新检查兼容性。
+
+当前是未完成 Apple Developer ID 签名和公证的测试版。
+首次打开可能被 macOS 提示或阻止。请先核对仓库与校验值，
+只在确认来源可信后，按照系统“隐私与安全性”中的提示自行处理。
+安装包不包含关闭 Gatekeeper 或移除隔离属性的脚本。
+
+任务提醒在本机处理，不向外上传聊天记录、设备列表或运行日志。
+应用读取本机 Codex 事件；观察器只转发提醒所需元数据。
+设置与运行数据：~/Library/Application Support/CodexVoice/
+
+项目与反馈：https://github.com/superslash-rico/codex-voice

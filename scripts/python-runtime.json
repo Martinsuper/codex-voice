@@ -1,0 +1,7 @@
+{
+  "version": "3.14.8",
+  "framework_version": "3.14",
+  "url": "https://www.python.org/ftp/python/3.14.8/python-3.14.8-macos11.pkg",
+  "sha256": "507fc086c5c006ff875d344a75b4e67b8fb3c401f1bc4908c6250adb673d4907",
+  "source": "https://www.python.org/downloads/release/python-3148/"
+}
