@@ -123,7 +123,7 @@ class Tests(unittest.TestCase):
 
     def test_selected_device_uses_current_id_and_persists(self):
         info={'connected':True,'name':'USB 扬声器','id':99,'devices':[{'name':'USB 扬声器','uid':'usb-speaker','connected':True}]}
-        speaker=Speaker('小爱音箱',device_provider=lambda:info)
+        speaker=Speaker('小爱音箱',device_provider=lambda:info,voice_provider=lambda:[{'id':'Tingting'}])
         engine=Engine(speaker,lambda:1000)
         engine.event({'action':'set_audio_device','device':'USB 扬声器','uid':'usb-speaker'})
         with patch('voice_engine.subprocess.Popen') as popen:
@@ -164,7 +164,7 @@ class Tests(unittest.TestCase):
 
     def test_follow_system_output_does_not_pin_an_old_device_id(self):
         info={'connected':True,'name':'Mac mini扬声器','id':79,'defaultName':'Mac mini扬声器','devices':[]}
-        speaker=Speaker('小爱音箱',device_provider=lambda:info,device_uid='old-speaker')
+        speaker=Speaker('小爱音箱',device_provider=lambda:info,device_uid='old-speaker',voice_provider=lambda:[{'id':'Tingting'}])
         self.assertTrue(speaker.set_device(''))
         with patch('voice_engine.subprocess.Popen') as popen:
             self.assertTrue(speaker.speak('a','老板，测试。'))

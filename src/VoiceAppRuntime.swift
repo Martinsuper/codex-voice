@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Darwin
 
 final class ReminderPanel: NSPanel {
     override var canBecomeKey: Bool { true }
@@ -27,6 +28,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var clock: Timer?
     var lastStartupCheck = Date.distantPast
     var quitting = false
+    var menuAnchorX: CGFloat?
+    var menuAnchorBottomY: CGFloat?
+    var restartPolicy = ServiceRecoveryPolicy()
+    var restartWork: DispatchWorkItem?
+    var stoppingForRecovery = false
+    var engineStartedAt = Date.distantPast
+    var lastSnapshotAt = Date.distantPast
+    var healthySince: Date?
+    var engineGroup: pid_t?
+    var sleeping = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -36,21 +47,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Codex 语音提醒")
         statusItem.button?.imagePosition = .imageLeading
+        statusItem.button?.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         statusItem.button?.target = self
         statusItem.button?.action = #selector(toggleWindow)
         statusItem.button?.toolTip = "Codex 语音提醒 · 点此打开控制面板"
         model.action = { [weak self] in self?.send($0) }
         model.changeStartup = { [weak self] in self?.setStartup($0) }
         model.hide = { [weak self] in self?.hidePanel("manual-hide") }
-        model.retry = { [weak self] in self?.startEngine() }
+        model.retry = { [weak self] in self?.manualReconnect() }
         model.connectCodex = { [weak self] in self?.installConnection() }
-        model.maximumListHeight = max(140, min(380, (NSScreen.main?.visibleFrame.height ?? 900) - 300))
+        model.maximumListHeight = max(100, min(380, (NSScreen.main?.visibleFrame.height ?? 900) - 380))
+        model.maximumSettingsHeight = max(160, min(540, (NSScreen.main?.visibleFrame.height ?? 900) - 190))
         buildWindow()
         startEngine()
         refreshClock()
         refreshConnection()
         if !CommandLine.arguments.contains("--background") { showWindow() }
         clock = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.refreshClock() }
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(willSleep), name: NSWorkspace.willSleepNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(didWake), name: NSWorkspace.didWakeNotification, object: nil)
     }
 
     func buildWindow() {
@@ -62,7 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = true
-        window.isMovableByWindowBackground = true
+        window.isMovableByWindowBackground = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.delegate = self
         hosting = PanelHostingView(rootView: VoicePanelView(model: model))
@@ -74,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func resizePanel(_ proposed: CGFloat) {
         guard let window, proposed.isFinite, proposed > 100 else { return }
-        let screen = window.screen ?? NSScreen.main
+        let screen = statusItem.button?.window?.screen ?? window.screen ?? NSScreen.main
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let height = min(ceil(proposed), visible.height - 24)
         guard abs(window.frame.height - height) > 0.5 else { return }
@@ -82,58 +97,170 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         frame.origin.y = max(visible.minY + 12, frame.maxY - height)
         frame.size = NSSize(width: 410, height: height)
         window.setFrame(frame, display: true)
+        positionPanel()
         window.invalidateShadow()
         recordPanelState("content-resized")
     }
 
     func positionPanel() {
-        guard let button = statusItem.button, let barWindow = button.window else { window.center(); return }
-        let anchor = barWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        guard let button = statusItem.button, let barWindow = button.window else {
+            if menuAnchorX == nil { window.center() }
+            return
+        }
+        let buttonRect = barWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        let imageRect = button.cell?.imageRect(forBounds: button.bounds) ?? .zero
+        let image = imageRect.width > 0 ? barWindow.convertToScreen(button.convert(imageRect, to: nil)) : buttonRect
+        let anchor = CGRect(x: image.midX - 1, y: buttonRect.minY, width: 2, height: buttonRect.height)
         let screen = barWindow.screen ?? NSScreen.main
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let x = min(max(anchor.midX - window.frame.width / 2, visible.minX + 12), visible.maxX - window.frame.width - 12)
-        let y = max(visible.minY + 12, min(anchor.minY - window.frame.height - 8, visible.maxY - window.frame.height - 8))
-        window.setFrameOrigin(NSPoint(x: x, y: y))
+        let listHeight = max(100, min(380, visible.height - 380))
+        let settingsHeight = max(160, min(540, visible.height - 190))
+        if abs(model.maximumListHeight - listHeight) > 0.5 { model.maximumListHeight = listHeight }
+        if abs(model.maximumSettingsHeight - settingsHeight) > 0.5 { model.maximumSettingsHeight = settingsHeight }
+        if window.frame.height > visible.height - 24 {
+            var frame = window.frame; frame.size.height = visible.height - 24
+            window.setFrame(frame, display: true)
+        }
+        let placement = PanelChrome.placement(size: window.frame.size, anchor: anchor, visible: visible)
+        let moved = abs(window.frame.minX - placement.origin.x) > 0.25 || abs(window.frame.minY - placement.origin.y) > 0.25
+        menuAnchorX = anchor.midX
+        menuAnchorBottomY = min(anchor.minY, visible.maxY)
+        if moved {
+            window.setFrameOrigin(placement.origin)
+        }
+        let arrowX = min(max(anchor.midX - window.frame.minX, 2), window.frame.width - 2)
+        let arrowChanged = abs(model.panelArrowX - arrowX) > 0.25
+        if arrowChanged { model.panelArrowX = arrowX }
+        if arrowChanged || moved { window.invalidateShadow(); recordPanelState("anchor-adjusted") }
     }
 
     func startEngine() {
+        guard !quitting else { return }
         guard process?.isRunning != true else { return }
         do { try AppPaths.prepare() }
         catch { model.serviceError = error.localizedDescription; return }
         runtimeURL = AppPaths.runtime
-        model.serviceError = nil
+        model.serviceError = "正在启动提醒服务…"
+        model.serviceRecovering = true
         let p = Process()
         p.executableURL = AppPaths.python
         p.environment = AppPaths.environment
-        p.arguments = ["-s", AppPaths.resources.appendingPathComponent("voice_engine.py").path, "--state-dir", AppPaths.runtime.path, "--codex-dir", AppPaths.codexHome.path]
+        p.arguments = ["-s", AppPaths.resources.appendingPathComponent("voice_engine.py").path, "--state-dir", AppPaths.runtime.path, "--codex-dir", AppPaths.codexHome.path, "--usage"]
         let inputPipe = Pipe(), outputPipe = Pipe(), errorPipe = Pipe()
         p.standardInput = inputPipe; p.standardOutput = outputPipe; p.standardError = errorPipe
-        outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        outputPipe.fileHandleForReading.readabilityHandler = { [weak self, weak p] handle in
             let chunk = handle.availableData
             if chunk.isEmpty { return }
-            DispatchQueue.main.async { self?.receive(chunk) }
+            DispatchQueue.main.async { if let self, let p, self.process === p { self.receive(chunk) } }
         }
         errorPipe.fileHandleForReading.readabilityHandler = { handle in _ = handle.availableData }
         p.terminationHandler = { [weak self] stopped in
             DispatchQueue.main.async {
                 guard let self, self.process === stopped, !self.quitting else { return }
-                self.model.serviceError = "点击「重新连接」恢复提醒。"
-                self.statusItem.button?.title = " !"
-                if !self.window.isVisible { self.positionPanel() }
-                self.window.orderFrontRegardless()
-                self.recordPanelState("service-stopped")
+                self.cleanupEngineGroup(stopped)
+                if !self.stoppingForRecovery { self.scheduleRecovery("提醒服务意外停止") }
             }
         }
-        do { try p.run(); process = p; input = inputPipe; buffer = Data() }
-        catch { model.serviceError = "启动失败：\(error.localizedDescription)" }
+        do {
+            try p.run(); process = p; input = inputPipe; buffer = Data()
+            engineStartedAt = Date(); lastSnapshotAt = .distantPast; healthySince = nil; engineGroup = nil
+        } catch { scheduleRecovery("提醒服务启动失败") }
+    }
+
+    func cleanupEngineGroup(_ stopped: Process) {
+        if let group = engineGroup, group > 0, group == stopped.processIdentifier { _ = Darwin.kill(-group, SIGTERM) }
+        engineGroup = nil
+    }
+
+    func scheduleRecovery(_ reason: String) {
+        guard !quitting else { return }
+        restartWork?.cancel()
+        healthySince = nil
+        guard let delay = restartPolicy.nextDelay(at: Date()) else {
+            stoppingForRecovery = process?.isRunning == true
+            if let old = process, old.isRunning {
+                send(["action":"quit"])
+                old.terminate()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+                    if old.isRunning {
+                        if self?.engineGroup == old.processIdentifier { _ = Darwin.kill(-old.processIdentifier, SIGKILL) }
+                        else { _ = Darwin.kill(old.processIdentifier, SIGKILL) }
+                    }
+                }
+            }
+            model.serviceRecovering = false
+            model.serviceError = "连续恢复失败，请点击「重新连接」再试。"
+            updateStatusItem(); recordPanelState("service-recovery-limit")
+            return
+        }
+        model.serviceRecovering = true
+        model.serviceError = reason + "，正在自动恢复…"
+        let old = process
+        let wasRunning = old?.isRunning == true
+        stoppingForRecovery = true
+        if wasRunning, let old {
+            send(["action":"quit"])
+            try? input?.fileHandleForWriting.close()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                if old.isRunning { old.terminate() }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+                if old.isRunning {
+                    if self?.engineGroup == old.processIdentifier { _ = Darwin.kill(-old.processIdentifier, SIGKILL) }
+                    else { _ = Darwin.kill(old.processIdentifier, SIGKILL) }
+                }
+            }
+        }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.quitting else { return }
+            self.restartWork = nil
+            self.stoppingForRecovery = false
+            if self.process?.isRunning == true { self.scheduleRecovery("提醒服务尚未停止"); return }
+            self.startEngine()
+        }
+        restartWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(delay, wasRunning ? 5 : 0), execute: work)
+        updateStatusItem(); recordPanelState("service-recovering")
+    }
+
+    func manualReconnect() {
+        guard !quitting else { return }
+        restartPolicy.reset(); restartWork?.cancel(); restartWork = nil
+        if process?.isRunning == true { scheduleRecovery("正在重新连接") }
+        else { stoppingForRecovery = false; startEngine() }
+    }
+
+    @objc func willSleep() {
+        sleeping = true
+        send(["action":"prepare_sleep"])
+    }
+    @objc func didWake() {
+        guard !quitting else { return }
+        sleeping = false
+        lastSnapshotAt = Date(); engineStartedAt = Date()
+        if process?.isRunning == true { send(["action":"wake"]) }
+        else if restartWork == nil { manualReconnect() }
     }
 
     func send(_ event: [String: Any]) {
+        if let action = event["action"] as? String, ["ack", "ack_all", "resolve", "snooze"].contains(action) {
+            do {
+                let folder = AppPaths.runtime.appendingPathComponent("inbox", isDirectory: true)
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions:0o700])
+                var payload = event; payload["sentAt"] = Date().timeIntervalSince1970
+                if action == "ack_all" { payload["ids"] = Array(knownIDs) }
+                let data = try JSONSerialization.data(withJSONObject: payload)
+                let path = folder.appendingPathComponent("panel-" + UUID().uuidString + ".json")
+                try data.write(to: path, options: .atomic)
+                try FileManager.default.setAttributes([.posixPermissions:0o600], ofItemAtPath: path.path)
+            } catch { model.serviceError = "操作暂未记录，请在服务恢复后再试。" }
+            return
+        }
         guard let input, let data = try? JSONSerialization.data(withJSONObject: event) else { return }
         do { try input.fileHandleForWriting.write(contentsOf: data + Data([10])) }
         catch { model.serviceError = "服务连接已断开，请重新连接。" }
         // A sound test started from Settings should show its acknowledgement.
-        if event["action"] as? String == "test" { model.settingsOpen = false }
+        if event["action"] as? String == "test" { model.settingsOpen = false; model.speechSettingsOpen = false; model.pauseDurationOpen = false; model.usageOpen = false; model.rulesOpen = false; model.quietHoursOpen = false }
     }
 
     func receive(_ data: Data) {
@@ -153,14 +280,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if changed { model.listContentHeight = CGFloat(alerts.count) * 148 + CGFloat(max(0, alerts.count - 1)) * 9 + 14 }
             model.snapshot = value
             model.serviceError = nil
-            statusItem.button?.title = alerts.isEmpty ? "" : " \(alerts.count)"
+            model.serviceRecovering = false
+            lastSnapshotAt = Date()
+            if healthySince == nil { healthySince = Date(); recordPanelState("service-restored") }
+            if let service = value["service"] as? [String: Any], let pid = service["pid"] as? Int32,
+               let group = service["processGroup"] as? Int32, pid == process?.processIdentifier, pid == group { engineGroup = group }
             if hasNew {
-                if !model.devicePickerOpen { model.settingsOpen = false }
+                if !window.isVisible && !model.devicePickerOpen { model.settingsOpen = false; model.speechSettingsOpen = false; model.pauseDurationOpen = false; model.usageOpen = false; model.rulesOpen = false; model.quietHoursOpen = false }
                 if !window.isVisible { positionPanel() }
                 window.orderFrontRegardless()
             }
             refreshClock()
-            if finishedAll { model.settingsOpen = false; model.devicePickerOpen = false; window.orderOut(nil) }
+            if finishedAll && !model.speechSettingsOpen && !model.pauseDurationOpen && !model.usageOpen && !model.rulesOpen && !model.quietHoursOpen { model.settingsOpen = false; model.devicePickerOpen = false; window.orderOut(nil) }
             if changed { recordPanelState(finishedAll ? "all-handled" : hasNew ? "new-reminder" : "pending-updated") }
         }
     }
@@ -168,10 +299,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func refreshClock() {
         model.now = Date().timeIntervalSince1970
         statusItem.button?.image = NSImage(systemSymbolName: model.enabled ? "waveform" : "bell.slash", accessibilityDescription: model.enabled ? "语音提醒已开启" : "语音提醒已关闭")
+        updateStatusItem()
+        if !sleeping && !stoppingForRecovery && restartWork == nil && process?.isRunning == true {
+            let reference = lastSnapshotAt == .distantPast ? engineStartedAt : lastSnapshotAt
+            let limit: TimeInterval = lastSnapshotAt == .distantPast ? 30 : 20
+            if Date().timeIntervalSince(reference) > limit { scheduleRecovery("提醒服务长时间未响应") }
+            if let healthySince, Date().timeIntervalSince(healthySince) > 60 { restartPolicy.reset() }
+        }
         if Date().timeIntervalSince(lastStartupCheck) > 30 {
             model.startupEnabled = LoginStartup.status()["enabled"] as? Bool ?? false
             lastStartupCheck = Date()
         }
+        if window?.isVisible == true { positionPanel() }
+    }
+
+    func updateStatusItem() {
+        guard let button = statusItem.button else { return }
+        let usage = model.usage
+        let percentage = model.serviceError == nil ? usage.percentage : "—"
+        let suffix = model.serviceError != nil ? " · !" : model.alerts.isEmpty ? "" : " · \(model.alerts.count)"
+        let title = " \(percentage)" + suffix
+        if button.title != title {
+            button.title = title
+            if window != nil { recordPanelState("menu-updated") }
+        }
+        button.toolTip = "Codex 剩余用量 \(percentage) · \(usage.updateNote)\n\(model.alerts.count) 件待处理 · 点此打开控制面板"
+        button.setAccessibilityLabel("Codex 语音提醒，剩余用量 \(percentage)，\(model.alerts.count) 件待处理")
     }
 
     func setStartup(_ enabled: Bool) {
@@ -203,7 +356,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func recordPanelState(_ reason: String) {
         guard let runtimeURL else { return }
-        let state: [String: Any] = ["at": Date().timeIntervalSince1970, "pid": ProcessInfo.processInfo.processIdentifier, "visible": window.isVisible, "pending": knownIDs.count, "reason": reason, "settingsOpen": model.settingsOpen, "width": window.frame.width, "height": window.frame.height]
+        var state: [String: Any] = ["at": Date().timeIntervalSince1970, "pid": ProcessInfo.processInfo.processIdentifier, "visible": window.isVisible, "pending": knownIDs.count, "reason": reason, "settingsOpen": model.settingsOpen, "menuTitle": statusItem.button?.title ?? "", "width": window.frame.width, "height": window.frame.height, "arrowX": model.panelArrowX, "arrowTipScreenX": window.frame.minX + model.panelArrowX]
+        if let menuAnchorX { state["menuAnchorX"] = menuAnchorX; state["arrowAlignmentError"] = abs(window.frame.minX + model.panelArrowX - menuAnchorX) }
+        if let menuAnchorBottomY { state["menuGap"] = menuAnchorBottomY - window.frame.maxY }
         guard let data = try? JSONSerialization.data(withJSONObject: state, options: [.sortedKeys]) else { return }
         try? data.write(to: runtimeURL.appendingPathComponent("panel-state.json"), options: .atomic)
     }
@@ -222,7 +377,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         quitting = true
         clock?.invalidate()
+        restartWork?.cancel()
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         send(["action":"quit"])
         try? input?.fileHandleForWriting.close()
+        if let process, process.isRunning {
+            process.terminate()
+            _ = Darwin.kill(process.processIdentifier, SIGCONT)
+            let deadline = Date().addingTimeInterval(3)
+            while process.isRunning && Date() < deadline { usleep(20_000) }
+            if process.isRunning {
+                if engineGroup == process.processIdentifier { _ = Darwin.kill(-process.processIdentifier, SIGKILL) }
+                else { _ = Darwin.kill(process.processIdentifier, SIGKILL) }
+            }
+        }
     }
 }

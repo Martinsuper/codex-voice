@@ -23,6 +23,8 @@ enum AppPaths {
     static var environment: [String: String] {
         var values = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("PYTHON") && $0.key != "__PYVENV_LAUNCHER__" }
         values["PYTHONHOME"] = pythonHome.path
+        // Only the signed application resources may provide companion modules.
+        values["PYTHONPATH"] = resources.path
         values["PYTHONNOUSERSITE"] = "1"
         values["PYTHONDONTWRITEBYTECODE"] = "1"
         values["PYTHONSAFEPATH"] = "1"

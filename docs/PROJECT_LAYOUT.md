@@ -26,6 +26,6 @@ python3 scripts/build.py --package
 python3 scripts/verify_app.py '.build/Codex 语音提醒.app'
 ```
 
-日常修改后在此目录提交并推送到 `origin/main`。安装包通过 Releases 发行；现有 `.gitignore` 保留构建产物和本地资料的排除规则。
+本地新功能开发完成后，先构建并验证，再备份旧版与设置，更新本机“应用程序”中的应用并启动，供用户测试。提交、推送到 `origin/main` 和通过 Releases 发行按用户的明确要求执行；现有 `.gitignore` 保留构建产物和本地资料的排除规则。
 
 已安装的应用继续位于 macOS 的“应用程序”，运行设置位于 `~/Library/Application Support/CodexVoice/`，与源码目录分开。移动开发目录不会要求移动已安装应用。
