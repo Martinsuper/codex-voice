@@ -56,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.hide = { [weak self] in self?.hidePanel("manual-hide") }
         model.retry = { [weak self] in self?.manualReconnect() }
         model.connectCodex = { [weak self] in self?.installConnection() }
-        model.maximumListHeight = max(100, min(380, (NSScreen.main?.visibleFrame.height ?? 900) - 380))
+        model.maximumListHeight = max(100, min(380, (NSScreen.main?.visibleFrame.height ?? 900) - 410))
         model.maximumSettingsHeight = max(160, min(540, (NSScreen.main?.visibleFrame.height ?? 900) - 190))
         buildWindow()
         startEngine()
@@ -113,7 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let anchor = CGRect(x: image.midX - 1, y: buttonRect.minY, width: 2, height: buttonRect.height)
         let screen = barWindow.screen ?? NSScreen.main
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let listHeight = max(100, min(380, visible.height - 380))
+        let listHeight = max(100, min(380, visible.height - 410))
         let settingsHeight = max(160, min(540, visible.height - 190))
         if abs(model.maximumListHeight - listHeight) > 0.5 { model.maximumListHeight = listHeight }
         if abs(model.maximumSettingsHeight - settingsHeight) > 0.5 { model.maximumSettingsHeight = settingsHeight }

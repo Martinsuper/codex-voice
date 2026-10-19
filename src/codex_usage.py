@@ -166,7 +166,7 @@ def read_usage(codex_home, stop=None, executable=None, timeout=25):
     try:
         rpc = UsageRPC(executable or find_codex_cli(), codex_home, stop, timeout)
         rpc.send({"id": 1, "method": "initialize", "params": {"clientInfo": {
-            "name": "codex_voice", "title": "Codex 语音提醒", "version": "0.6.0-beta.1"}}})
+            "name": "codex_voice", "title": "Codex 语音提醒", "version": "0.6.0-beta.2"}}})
         rpc.receive(1)
         rpc.send({"method": "initialized", "params": {}})
         rpc.send({"id": 2, "method": "account/read", "params": {"refreshToken": False}})

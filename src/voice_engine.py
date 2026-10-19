@@ -33,7 +33,7 @@ USAGE_LOW_ID = "usage-low:"
 USAGE_LOW_PREVIEW_ID = USAGE_LOW_ID + "preview"
 DEFAULT_PAUSE_MINUTES = 15
 KINDS = {"approval": "等待审批", "question": "等待回答", "result": "已有结果", "blocked": "需要关注", "test": "播报测试"}
-VERSION = "0.6.0-beta.1"
+VERSION = "0.6.0-beta.2"
 
 
 def clean_label(value, fallback="当前任务"):

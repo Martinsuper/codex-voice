@@ -71,6 +71,7 @@ struct UsageSummaryRow: View {
     @ObservedObject var model: VoicePanelModel
     private var usage: CodexUsage { model.usage }
     var body: some View {
+        VStack(spacing: 0) {
         HStack(spacing: 10) {
             Button { model.usageOpen = true } label: {
                 HStack(spacing: 10) {
@@ -89,6 +90,9 @@ struct UsageSummaryRow: View {
             UsageRefreshButton(model: model, compact: true)
         }.padding(.horizontal, 20).padding(.vertical, 12)
             .overlay(alignment: .top) { VoiceTheme.line.frame(height: 1) }
+            SubscriptionServiceLink(compact: true)
+                .padding(.horizontal, 20).padding(.bottom, 11)
+        }
     }
 }
 
@@ -193,6 +197,7 @@ struct UsageDetailView: View {
                 if !usage.plan.isEmpty { Text(usage.plan).font(VoiceTheme.font(12, medium: true)).foregroundColor(VoiceTheme.secondary) }
             }
             Text(usage.updateNote).font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary).padding(.top, 5).padding(.bottom, 17)
+            SubscriptionServiceLink().padding(.bottom, 16)
             if !usage.windows.isEmpty {
                 VStack(spacing: 14) {
                     ForEach(usage.windows) { window in

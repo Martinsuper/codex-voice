@@ -112,11 +112,11 @@ def main():
     resources = app/"Contents/Resources";resources.mkdir(parents=True)
     (app/"Contents/MacOS").mkdir()
     (app/"Contents/Frameworks").mkdir()
-    info = {"CFBundleDisplayName":"Codex 语音提醒", "CFBundleName":"CodexVoice", "CFBundleExecutable":"CodexVoice", "CFBundleIdentifier":"local.rico.CodexVoice", "CFBundlePackageType":"APPL", "CFBundleShortVersionString":VERSION.split("-")[0], "CFBundleVersion":"8", "CodexVoiceVersion":VERSION, "LSMinimumSystemVersion":"13.0", "LSUIElement":True, "NSHighResolutionCapable":True, "CFBundleIconFile":"AppIcon.icns"}
+    info = {"CFBundleDisplayName":"Codex 语音提醒", "CFBundleName":"CodexVoice", "CFBundleExecutable":"CodexVoice", "CFBundleIdentifier":"local.rico.CodexVoice", "CFBundlePackageType":"APPL", "CFBundleShortVersionString":VERSION.split("-")[0], "CFBundleVersion":"9", "CodexVoiceVersion":VERSION, "LSMinimumSystemVersion":"13.0", "LSUIElement":True, "NSHighResolutionCapable":True, "CFBundleIconFile":"AppIcon.icns"}
     (app/"Contents/Info.plist").write_bytes(plistlib.dumps(info))
     for name in ["voice_engine.py", "speech_settings.py", "codex_usage.py", "reminder_rules.py", "reminder_recovery.py", "voice_bridge.py", "hook_setup.py", "runtime_info.py"]:
         shutil.copy2(ROOT/"src"/name, resources/name)
-    compile_universal(build, app/"Contents/MacOS/CodexVoice", [ROOT/"src"/name for name in ["VoiceApp.swift","AppPaths.swift","VoiceAppRuntime.swift","VoicePanel.swift","SpeechSettingsView.swift","PanelChrome.swift","UsageView.swift","ReminderSettingsView.swift","ServiceRecovery.swift"]], ["AppKit","SwiftUI"])
+    compile_universal(build, app/"Contents/MacOS/CodexVoice", [ROOT/"src"/name for name in ["VoiceApp.swift","AppPaths.swift","VoiceAppRuntime.swift","VoicePanel.swift","SpeechSettingsView.swift","PanelChrome.swift","UsageView.swift","SubscriptionLinkView.swift","ReminderSettingsView.swift","ServiceRecovery.swift"]], ["AppKit","SwiftUI"])
     compile_universal(build, resources/"AudioDeviceInfo", [ROOT/"src/AudioDeviceInfo.swift"], ["CoreAudio"])
     expanded = acquire_runtime(args.cache.resolve())
     binaries = embed_runtime(expanded, app/"Contents/Frameworks/Python.framework")

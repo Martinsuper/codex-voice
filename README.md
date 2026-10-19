@@ -4,7 +4,7 @@
 
 第三方工具，与 OpenAI 官方产品无隶属关系。
 
-[下载 v0.6.0-beta.1 DMG](https://github.com/superslash-rico/codex-voice/releases/download/v0.6.0-beta.1/CodexVoice-0.6.0-beta.1-universal.dmg) · [全部发行文件](https://github.com/superslash-rico/codex-voice/releases/tag/v0.6.0-beta.1) · [更新日志](CHANGELOG.md)
+[下载 v0.6.0-beta.2 DMG](https://github.com/superslash-rico/codex-voice/releases/download/v0.6.0-beta.2/CodexVoice-0.6.0-beta.2-universal.dmg) · [全部发行文件](https://github.com/superslash-rico/codex-voice/releases/tag/v0.6.0-beta.2) · [更新日志](CHANGELOG.md)
 
 ## 安装与重新打开
 
@@ -95,6 +95,12 @@
 启动或修改阈值后会检查最新有效读数，同一账号、同一额度周期、同一阈值只播报一次，重复刷新及重启会去重；新的额度周期可再次提醒。修改成另一阈值视为新规则，改回本周期已提醒过的阈值不会重复播报。多个低额度周期合并播报，总剩余量仍取各周期最低值；读取失败、数据过期或周期信息无效时保持安静。
 
 低额度播报沿用声音设置，普通任务提醒优先，不生成待处理事项。关闭或暂停时不发声；恢复后若仍低且本周期尚未提醒，会再次检查。音频不可用时不消耗本次提醒机会。**试听低额度提醒** 使用已保存的阈值演示，并明确说明是试听，不改变真实用量。
+
+### 订阅与充值
+
+工具免费使用。主面板用量区域的 **订阅与充值**、用量详情中的服务卡片可打开 [slashx.shop](https://slashx.shop/)，查看 ChatGPT / Codex 套餐、购买流程和兑换说明。该网站由第三方独立运营，非 OpenAI 官方网站；服务条件与价格以网站为准。
+
+只有主动点击时才在默认浏览器打开固定网址，链接不携带账号、邮箱、用量或登录凭据。购买订阅是可选服务，提醒功能可独立免费使用。此入口从 v0.6.0-beta.2 起提供。
 
 ### 扬声器选择
 
