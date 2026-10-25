@@ -158,8 +158,8 @@ struct SpeechSettingsView: View {
                 Text("例如：老板、Rico；最多 20 个字。")
                     .font(VoiceTheme.font(10)).foregroundColor(VoiceTheme.secondary)
             }
-        }.padding(14).background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 11))
-            .overlay(RoundedRectangle(cornerRadius: 11).stroke(VoiceTheme.line, lineWidth: 1)).disabled(!model.connected)
+        }.padding(14).background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(VoiceTheme.line, lineWidth: 1)).disabled(!model.connected)
     }
 
     private var intervalCard: some View {
@@ -186,8 +186,8 @@ struct SpeechSettingsView: View {
                 .font(VoiceTheme.font(10)).foregroundColor(VoiceTheme.secondary).fixedSize(horizontal: false, vertical: true)
             Text("修改会用于当前提醒；已选“稍后”的时间保留。")
                 .font(VoiceTheme.font(10)).foregroundColor(VoiceTheme.secondary).fixedSize(horizontal: false, vertical: true)
-        }.padding(14).background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 11))
-            .overlay(RoundedRectangle(cornerRadius: 11).stroke(VoiceTheme.line, lineWidth: 1)).disabled(!model.connected)
+        }.padding(14).background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(VoiceTheme.line, lineWidth: 1)).disabled(!model.connected)
     }
 
     private func submit() {

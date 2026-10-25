@@ -98,8 +98,8 @@ private struct RuleEditor: View {
                     .disabled(!model.connected || draft.patch == nil || draft.matches(raw))
                     .accessibilityLabel("保存" + title + "规则")
             }
-        }.padding(14).background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 11))
-            .overlay(RoundedRectangle(cornerRadius: 11).stroke(VoiceTheme.line, lineWidth: 1))
+        }.padding(14).background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(VoiceTheme.line, lineWidth: 1))
             .disabled(!model.connected)
             .onChange(of: signature) { _ in draft = ReminderRuleDraft(raw, global: model.speech["intervals"] as? [Int] ?? [30,60,180]) }
     }
@@ -211,7 +211,7 @@ struct QuietHoursView: View {
                     Toggle("允许审批提醒出声", isOn: $draft.approval).font(VoiceTheme.font(12)).toggleStyle(.checkbox)
                     Text("时段内保留待办卡片；结束后只播报仍未处理的事项。手动暂停和提醒总开关始终优先。")
                         .font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary).fixedSize(horizontal: false, vertical: true)
-                }.padding(14).background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 11)).disabled(!model.connected)
+                }.padding(14).background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 14)).disabled(!model.connected)
             }.frame(height: min(365, model.maximumSettingsHeight))
             if !draft.valid { Text("请填写不同的有效时间，并至少选择一天。") .font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.amber).padding(.top, 9) }
             if let error = model.quiet["error"] as? String, !error.isEmpty { Text(error).font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.amber).padding(.top, 9) }

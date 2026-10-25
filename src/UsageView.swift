@@ -23,6 +23,14 @@ struct UsageWindow: Identifiable {
         if minutes.truncatingRemainder(dividingBy: 60) == 0 { return "\(Int(minutes / 60)) 小时额度" }
         return "\(Int(minutes)) 分钟额度"
     }
+    func resetNote(now:Double) -> String {
+        guard let resetsAt else {return "自动同步周期"}
+        let minutes=max(0,Int(ceil((resetsAt-now)/60)))
+        if minutes==0 {return "等待周期更新"}
+        if minutes>=1440 {return "\(minutes/1440)天\((minutes%1440)/60)小时后重置"}
+        if minutes>=60 {return "\(minutes/60)小时\(minutes%60 == 0 ? "" : "\(minutes%60)分")后重置"}
+        return "\(minutes)分钟后重置"
+    }
 }
 
 struct CodexUsage {
@@ -68,35 +76,16 @@ struct CodexUsage {
 }
 
 struct UsageSummaryRow: View {
-    @ObservedObject var model: VoicePanelModel
-    private var usage: CodexUsage { model.usage }
-    var body: some View {
-        VStack(spacing: 0) {
-        HStack(spacing: 10) {
-            Button { model.usageOpen = true } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "gauge.medium").font(.system(size: 17))
-                        .foregroundColor(usage.low ? VoiceTheme.amber : VoiceTheme.green).frame(width: 22)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Codex 剩余用量").font(VoiceTheme.font(12, medium: true))
-                        Text(usage.updateNote).font(VoiceTheme.font(10)).foregroundColor(VoiceTheme.secondary)
-                    }
-                    Spacer(minLength: 5)
-                    Text(usage.percentage).font(VoiceTheme.font(18, medium: true)).monospacedDigit()
-                        .foregroundColor(usage.remaining == nil ? VoiceTheme.secondary : usage.low ? VoiceTheme.amber : VoiceTheme.green)
-                    Image(systemName: "chevron.right").font(.system(size: 9)).foregroundColor(VoiceTheme.secondary)
-                }.contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityLabel("Codex 剩余用量 \(usage.percentage)，查看详情")
-            UsageRefreshButton(model: model, compact: true)
-        }.padding(.horizontal, 20).padding(.vertical, 12)
-            .overlay(alignment: .top) { VoiceTheme.line.frame(height: 1) }
-            SubscriptionServiceLink(compact: true)
-                .padding(.horizontal, 20).padding(.bottom, 11)
-        }
+    @ObservedObject var model:VoicePanelModel
+    var body:some View {
+        VStack(spacing:12) {
+            UsageOverviewCard(model:model,compact:true)
+            SubscriptionServiceLink()
+        }.padding(.horizontal,18).padding(.bottom,12)
     }
 }
 
-private struct UsageRefreshButton: View {
+struct UsageRefreshButton: View {
     @ObservedObject var model: VoicePanelModel
     var compact = false
     var body: some View {
@@ -189,13 +178,15 @@ struct UsageDetailView: View {
             }.padding(.bottom, 20)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(usage.percentage).font(VoiceTheme.font(38, medium: true)).monospacedDigit()
-                    .foregroundColor(usage.remaining == nil ? VoiceTheme.secondary : usage.low ? VoiceTheme.amber : VoiceTheme.green)
-                Text("剩余").font(VoiceTheme.font(13)).foregroundColor(VoiceTheme.secondary)
-                Spacer()
-                if !usage.plan.isEmpty { Text(usage.plan).font(VoiceTheme.font(12, medium: true)).foregroundColor(VoiceTheme.secondary) }
-            }
+            HStack(spacing:22) {
+                UsageRing(remaining:usage.remaining,size:132,threshold:model.usageLowThreshold)
+                VStack(alignment:.leading,spacing:7) {
+                    Text("可用额度").font(VoiceTheme.font(18,medium:true))
+                    Text(usage.windows.count>1 ? "按剩余较少的周期显示" : "当前额度周期").font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary)
+                    if !usage.plan.isEmpty {Text(usage.plan).font(VoiceTheme.font(11,medium:true)).foregroundColor(VoiceTheme.accent).padding(.horizontal,9).padding(.vertical,4).background(VoiceTheme.greenFill).clipShape(Capsule())}
+                }
+                Spacer(minLength:0)
+            }.padding(.bottom,8)
             Text(usage.updateNote).font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary).padding(.top, 5).padding(.bottom, 17)
             SubscriptionServiceLink().padding(.bottom, 16)
             if !usage.windows.isEmpty {
@@ -222,12 +213,12 @@ struct UsageDetailView: View {
                             }
                         }
                     }
-                }.padding(14).background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 11))
-                    .overlay(RoundedRectangle(cornerRadius: 11).stroke(VoiceTheme.line, lineWidth: 1))
+                }.padding(14).background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(VoiceTheme.line, lineWidth: 1))
             } else {
                 Label(usage.message, systemImage: usage.state == "loading" ? "clock" : "exclamationmark.circle")
                     .font(VoiceTheme.font(12)).foregroundColor(VoiceTheme.secondary).fixedSize(horizontal: false, vertical: true)
-                    .padding(14).frame(maxWidth: .infinity, alignment: .leading).background(VoiceTheme.soft).clipShape(RoundedRectangle(cornerRadius: 11))
+                    .padding(14).frame(maxWidth: .infinity, alignment: .leading).background(VoiceTheme.soft).clipShape(RoundedRectangle(cornerRadius: 14))
             }
             Text("读取本机 Codex 当前登录账号，每分钟自动同步。多个周期时，菜单栏显示剩余最少的一项。")
                 .font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary).fixedSize(horizontal: false, vertical: true).padding(.top, 15)

@@ -38,10 +38,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var healthySince: Date?
     var engineGroup: pid_t?
     var sleeping = false
+    var previousApplication:NSRunningApplication?
+    var outsideMouseMonitor:Any?
+    var menuTrackingDepth=0
+    var menuObservers:[NSObjectProtocol]=[]
+    lazy var passport = PassportLink { [weak self] event in self?.send(event) }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        if NSRunningApplication.runningApplications(withBundleIdentifier: "local.rico.CodexVoice").count > 1 {
+        if NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? AppPaths.identifier).count > 1 {
             NSApp.terminate(nil); return
         }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -55,10 +60,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.changeStartup = { [weak self] in self?.setStartup($0) }
         model.hide = { [weak self] in self?.hidePanel("manual-hide") }
         model.retry = { [weak self] in self?.manualReconnect() }
+        model.setupPassport = { [weak self] in self?.passport.dictation.showSetup() }
         model.connectCodex = { [weak self] in self?.installConnection() }
-        model.maximumListHeight = max(100, min(380, (NSScreen.main?.visibleFrame.height ?? 900) - 410))
+        model.maximumListHeight = max(110, min(340, (NSScreen.main?.visibleFrame.height ?? 900) - 520))
         model.maximumSettingsHeight = max(160, min(540, (NSScreen.main?.visibleFrame.height ?? 900) - 190))
+        model.maximumMainContentHeight=max(180,(NSScreen.main?.visibleFrame.height ?? 900)-153)
         buildWindow()
+        menuObservers=[
+            NotificationCenter.default.addObserver(forName:NSMenu.didBeginTrackingNotification,object:nil,queue:.main) {[weak self] _ in self?.menuTrackingDepth += 1},
+            NotificationCenter.default.addObserver(forName:NSMenu.didEndTrackingNotification,object:nil,queue:.main) {[weak self] _ in guard let self else {return};self.menuTrackingDepth=max(0,self.menuTrackingDepth-1)}
+        ]
         startEngine()
         refreshClock()
         refreshConnection()
@@ -66,10 +77,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         clock = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.refreshClock() }
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(willSleep), name: NSWorkspace.willSleepNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(didWake), name: NSWorkspace.didWakeNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self,selector:#selector(frontApplicationChanged),name:NSWorkspace.didActivateApplicationNotification,object:nil)
     }
 
     func buildWindow() {
-        window = ReminderPanel(contentRect: NSRect(x: 0, y: 0, width: 410, height: 430), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        // Interactive settings use ordinary AppKit activation and input focus.
+        // A nonactivating key panel can strand TSM focus during Caps Lock IME
+        // switching on macOS 27. Automatic reminders still only order forward.
+        window = ReminderPanel(contentRect: NSRect(x: 0, y: 0, width: PanelChrome.width, height: 430), styleMask: [.borderless], backing: .buffered, defer: false)
         window.title = "Codex 语音提醒"
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false
@@ -95,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard abs(window.frame.height - height) > 0.5 else { return }
         var frame = window.frame
         frame.origin.y = max(visible.minY + 12, frame.maxY - height)
-        frame.size = NSSize(width: 410, height: height)
+        frame.size = NSSize(width: PanelChrome.width, height: height)
         window.setFrame(frame, display: true)
         positionPanel()
         window.invalidateShadow()
@@ -113,10 +128,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let anchor = CGRect(x: image.midX - 1, y: buttonRect.minY, width: 2, height: buttonRect.height)
         let screen = barWindow.screen ?? NSScreen.main
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let listHeight = max(100, min(380, visible.height - 410))
+        let listHeight = max(110, min(340, visible.height - 520))
         let settingsHeight = max(160, min(540, visible.height - 190))
+        let mainHeight=max(180,visible.height-153)
         if abs(model.maximumListHeight - listHeight) > 0.5 { model.maximumListHeight = listHeight }
         if abs(model.maximumSettingsHeight - settingsHeight) > 0.5 { model.maximumSettingsHeight = settingsHeight }
+        if abs(model.maximumMainContentHeight-mainHeight)>0.5 {model.maximumMainContentHeight=mainHeight}
         if window.frame.height > visible.height - 24 {
             var frame = window.frame; frame.size.height = visible.height - 24
             window.setFrame(frame, display: true)
@@ -231,6 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc func willSleep() {
+        passport.dictation.reset()
         sleeping = true
         send(["action":"prepare_sleep"])
     }
@@ -269,6 +287,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let line = buffer[..<index]
             buffer.removeSubrange(...index)
             guard let value = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
+            if let command = value["passportCommand"] as? [String: Any] {
+                passport.command(command)
+                continue
+            }
             if let error = value["error"] as? String { model.serviceError = error; continue }
             let alerts = (value["alerts"] as? [[String: Any]] ?? []).compactMap(VoiceAlert.init)
             let ids = Set(alerts.map(\.id))
@@ -279,6 +301,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             knownIDs = ids
             if changed { model.listContentHeight = CGFloat(alerts.count) * 148 + CGFloat(max(0, alerts.count - 1)) * 9 + 14 }
             model.snapshot = value
+            passport.update(value)
             model.serviceError = nil
             model.serviceRecovering = false
             lastSnapshotAt = Date()
@@ -286,12 +309,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if let service = value["service"] as? [String: Any], let pid = service["pid"] as? Int32,
                let group = service["processGroup"] as? Int32, pid == process?.processIdentifier, pid == group { engineGroup = group }
             if hasNew {
-                if !window.isVisible && !model.devicePickerOpen { model.settingsOpen = false; model.speechSettingsOpen = false; model.pauseDurationOpen = false; model.usageOpen = false; model.rulesOpen = false; model.quietHoursOpen = false }
+                if !window.isVisible && !model.devicePickerOpen { model.passportSettingsOpen=false; model.settingsOpen = false; model.speechSettingsOpen = false; model.pauseDurationOpen = false; model.usageOpen = false; model.rulesOpen = false; model.quietHoursOpen = false }
                 if !window.isVisible { positionPanel() }
                 window.orderFrontRegardless()
+                beginOutsideMouseMonitoring()
             }
             refreshClock()
-            if finishedAll && !model.speechSettingsOpen && !model.pauseDurationOpen && !model.usageOpen && !model.rulesOpen && !model.quietHoursOpen { model.settingsOpen = false; model.devicePickerOpen = false; window.orderOut(nil) }
+            if finishedAll && !model.passportSettingsOpen && !model.speechSettingsOpen && !model.pauseDurationOpen && !model.usageOpen && !model.rulesOpen && !model.quietHoursOpen { model.settingsOpen = false; model.devicePickerOpen = false; hidePanel("all-handled-auto") }
             if changed { recordPanelState(finishedAll ? "all-handled" : hasNew ? "new-reminder" : "pending-updated") }
         }
     }
@@ -356,19 +380,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func recordPanelState(_ reason: String) {
         guard let runtimeURL else { return }
-        var state: [String: Any] = ["at": Date().timeIntervalSince1970, "pid": ProcessInfo.processInfo.processIdentifier, "visible": window.isVisible, "pending": knownIDs.count, "reason": reason, "settingsOpen": model.settingsOpen, "menuTitle": statusItem.button?.title ?? "", "width": window.frame.width, "height": window.frame.height, "arrowX": model.panelArrowX, "arrowTipScreenX": window.frame.minX + model.panelArrowX]
+        var state: [String: Any] = ["at": Date().timeIntervalSince1970, "pid": ProcessInfo.processInfo.processIdentifier, "visible": window.isVisible,"keyWindow":window.isKeyWindow,"appActive":NSApp.isActive,"menuTrackingDepth":menuTrackingDepth, "pending": knownIDs.count, "reason": reason, "settingsOpen": model.settingsOpen, "menuTitle": statusItem.button?.title ?? "", "width": window.frame.width, "height": window.frame.height, "arrowX": model.panelArrowX, "arrowTipScreenX": window.frame.minX + model.panelArrowX]
         if let menuAnchorX { state["menuAnchorX"] = menuAnchorX; state["arrowAlignmentError"] = abs(window.frame.minX + model.panelArrowX - menuAnchorX) }
         if let menuAnchorBottomY { state["menuGap"] = menuAnchorBottomY - window.frame.maxY }
         guard let data = try? JSONSerialization.data(withJSONObject: state, options: [.sortedKeys]) else { return }
         try? data.write(to: runtimeURL.appendingPathComponent("panel-state.json"), options: .atomic)
     }
-    func hidePanel(_ reason: String) { window.orderOut(nil); recordPanelState(reason) }
+    func hidePanel(_ reason: String,restoreFocus:Bool=true) {
+        endOutsideMouseMonitoring()
+        window.endEditing(for:nil)
+        window.resignKey()
+        window.orderOut(nil)
+        if restoreFocus && NSApp.isActive { previousApplication?.activate(options:[]) }
+        previousApplication=nil
+        recordPanelState(reason)
+    }
+    func beginOutsideMouseMonitoring() {
+        guard outsideMouseMonitor==nil else {return}
+        // Mouse-only and only while visible: no key capture or event storage.
+        outsideMouseMonitor=NSEvent.addGlobalMonitorForEvents(matching:[.leftMouseDown,.rightMouseDown]) {[weak self] _ in
+            guard let self,!self.quitting,self.window.isVisible,self.menuTrackingDepth==0 else {return}
+            // Input-method candidate windows can receive a click while our
+            // field still owns key focus; let the input system handle those.
+            if !NSApp.isActive || !self.window.isKeyWindow {self.hidePanel("outside-click",restoreFocus:false)}
+        }
+    }
+    func endOutsideMouseMonitoring() {
+        if let monitor=outsideMouseMonitor {NSEvent.removeMonitor(monitor);outsideMouseMonitor=nil}
+    }
+    func applicationDidResignActive(_ notification:Notification) {
+        guard !quitting,window?.isVisible==true else {return}
+        hidePanel("application-deactivated",restoreFocus:false)
+    }
+    @objc func frontApplicationChanged(_ notification:Notification) {
+        guard !quitting,!NSApp.isActive,window?.isVisible==true,
+              let app=notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else {return}
+        hidePanel("other-app-activated",restoreFocus:false)
+    }
+    func windowDidResignKey(_ notification:Notification) {
+        guard notification.object as? NSWindow === window else {return}
+        DispatchQueue.main.async {[weak self] in
+            guard let self,!self.quitting,self.window.isVisible,self.menuTrackingDepth==0,self.window.attachedSheet==nil else {return}
+            if !NSApp.isActive || (NSApp.keyWindow != nil && NSApp.keyWindow !== self.window) {self.hidePanel("panel-focus-lost",restoreFocus:false)}
+        }
+    }
     @objc func toggleWindow() { window.isVisible ? hidePanel("manual-hide") : showWindow() }
     func showWindow() {
+        if let front=NSWorkspace.shared.frontmostApplication,front.processIdentifier != ProcessInfo.processInfo.processIdentifier {previousApplication=front}
         resizePanel(hosting.fittingSize.height)
         positionPanel()
-        window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        beginOutsideMouseMonitoring()
         recordPanelState("manual-open")
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool { hidePanel("manual-hide"); return false }
@@ -376,6 +440,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showWindow(); return true }
     func applicationWillTerminate(_ notification: Notification) {
         quitting = true
+        endOutsideMouseMonitoring()
+        menuObservers.forEach {NotificationCenter.default.removeObserver($0)}
+        menuObservers=[]
+        passport.stop()
         clock?.invalidate()
         restartWork?.cancel()
         NSWorkspace.shared.notificationCenter.removeObserver(self)

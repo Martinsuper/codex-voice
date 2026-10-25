@@ -24,6 +24,8 @@ from speech_settings import SpeechSettings, system_voices
 from codex_usage import UsageMonitor
 from reminder_rules import KindRule, QuietHours, load_rules, update_rules
 from reminder_recovery import RecoveryStore
+from passport_output import PassportOutput, PASSPORT_UID, PASSPORT_NAME
+from accessory_settings import PassportSettings, migrate_preferences
 
 INTERVALS = (30, 60, 180)
 PREVIEW_ID = "speech-preview"
@@ -33,7 +35,7 @@ USAGE_LOW_ID = "usage-low:"
 USAGE_LOW_PREVIEW_ID = USAGE_LOW_ID + "preview"
 DEFAULT_PAUSE_MINUTES = 15
 KINDS = {"approval": "等待审批", "question": "等待回答", "result": "已有结果", "blocked": "需要关注", "test": "播报测试"}
-VERSION = "0.6.0-beta.2"
+VERSION = "0.9.1-beta.1"
 
 
 def clean_label(value, fallback="当前任务"):
@@ -44,10 +46,10 @@ def clean_label(value, fallback="当前任务"):
     return value[:24]
 
 
-class Speaker:
-    def __init__(self, audio_device="", device_provider=None, device_uid="", voice_provider=None):
+class ComputerSpeaker:
+    def __init__(self, audio_device="", device_provider=None, device_uid="", voice_provider=None, passport_emit=None):
         self.process = None
-        self.alert_id = None
+        self.computer_alert_id = None
         self.audio_device = audio_device
         self.audio_device_uid = device_uid
         self.current_name = audio_device or "Mac 当前默认输出"
@@ -118,18 +120,18 @@ class Speaker:
             elif self.available and self.volume == 0:
                 self.last_error = "所选扬声器音量为零，已暂停播报"
             if self.last_error:
-                self.stop()
+                ComputerSpeaker.stop(self)
         except (OSError, ValueError, subprocess.SubprocessError):
             self.available = False
             self.last_error = "无法读取扬声器状态，已暂停播报"
-            self.stop()
+            ComputerSpeaker.stop(self)
 
     def set_device(self, name, uid=""):
         if not isinstance(name, str) or not isinstance(uid, str) or len(name) > 256 or len(uid) > 1024 or re.search(r"[\x00-\x1f]", name + uid):
             return False
         if name == self.audio_device and uid == self.audio_device_uid:
             return False
-        self.stop()
+        ComputerSpeaker.stop(self)
         self.audio_device = name
         self.audio_device_uid = uid
         self.current_name = name or "Mac 当前默认输出"
@@ -153,13 +155,13 @@ class Speaker:
         return status is None
 
     def speak(self, alert_id, text):
-        if self.busy():
+        if ComputerSpeaker.busy(self):
             return False
         self.next_device_check = 0
         self.refresh_audio()
         if not self.available or self.muted or self.volume == 0:
             return False
-        if not self.speech_status()["ready"]:
+        if not ComputerSpeaker.speech_status(self)["ready"]:
             return False
         args = ["/usr/bin/say", "-v", self.speech.voice, "-r", str(self.speech.rate)]
         if self.audio_device or self.audio_device_uid:
@@ -170,18 +172,134 @@ class Speaker:
             self.playback_error = "无法启动系统语音，请稍后重试。"
             return False
         self.playback_error = ""
-        self.alert_id = alert_id
+        self.computer_alert_id = alert_id
         return True
 
     def stop(self, alert_id=None):
-        if alert_id is None or self.alert_id == alert_id:
-            if self.busy():
+        if alert_id is None or self.computer_alert_id == alert_id:
+            if self.process is not None and self.process.poll() is None:
                 self.process.terminate()
-            self.alert_id = None
+            self.computer_alert_id = None
+
+
+class Speaker(ComputerSpeaker):
+    """One reminder scheduler, independently controlled computer/badge routes."""
+    def __init__(self, audio_device="", device_provider=None, device_uid="", voice_provider=None, passport_emit=None):
+        legacy = device_uid == PASSPORT_UID
+        super().__init__("" if legacy else audio_device, device_provider,
+                         "" if legacy else device_uid, voice_provider)
+        self.passport = PassportOutput(passport_emit)
+        self.passport_settings = PassportSettings(enabled=legacy, voiceEnabled=legacy)
+        self.computer_enabled = not legacy
+        self.legacy_passport_mode = legacy
+        self.last_alert_id = None
+        self.last_badge_started = False
+
+    @property
+    def alert_id(self):
+        if ComputerSpeaker.busy(self):
+            return self.computer_alert_id
+        with self.passport.condition:
+            p = self.passport.current
+            if p and p["started"] and not p["finished"]:
+                return p["alertId"]
+        return self.last_alert_id
+
+    @alert_id.setter
+    def alert_id(self, value):
+        self.last_alert_id = value
+        self.computer_alert_id = value
+
+    def active_alert_id(self):
+        if ComputerSpeaker.busy(self):
+            return self.computer_alert_id
+        with self.passport.condition:
+            p = self.passport.current
+            return p["alertId"] if p and p["started"] and not p["finished"] else None
+
+    def passport_feedback(self, event):
+        if isinstance(event,dict) and event.get("kind")=="dictation" and event.get("active") is True:
+            ComputerSpeaker.stop(self)
+        self.passport.feedback(event)
+
+    def configure_passport(self, patch):
+        updated = self.passport_settings.update(patch)
+        if (self.passport_settings.enabled and not updated.enabled) or (self.passport_settings.voiceEnabled and not updated.voiceEnabled):
+            self.passport.stop()
+        self.passport_settings = updated
+        self.legacy_passport_mode = False
+
+    def configure_computer(self, enabled):
+        if type(enabled) is not bool:
+            raise ValueError("电脑播报开关须为开启或关闭。")
+        if not enabled:
+            ComputerSpeaker.stop(self)
+        self.computer_enabled = enabled
+        self.legacy_passport_mode = False
+
+    def passport_status(self):
+        remote = self.passport.status()
+        return dict(self.passport_settings.to_dict(), connected=remote["available"],
+                    volume=remote["volume"], error=remote["error"],
+                    firmware=self.passport.firmware, petNameSupported=self.passport.pet_name_supported,petSync=dict(self.passport.pet_sync))
+
+    def audio_status(self):
+        computer = ComputerSpeaker.audio_status(self)
+        badge = self.passport.status()
+        badge_on = self.passport_settings.enabled and self.passport_settings.voiceEnabled
+        ready = (self.computer_enabled and computer["ready"]) or (badge_on and badge["available"])
+        available = (self.computer_enabled and computer["available"]) or (badge_on and badge["available"])
+        error = "" if ready else "；".join(x for x in [computer["error"] if self.computer_enabled else "",badge["error"] if badge_on else ""] if x)
+        return dict(computer,available=bool(available),ready=bool(ready),error=error,
+                    computerEnabled=self.computer_enabled,computerAvailable=computer["available"],
+                    computerReady=computer["ready"],computerError=computer["error"],computerSpeaking=ComputerSpeaker.busy(self),
+                    silent=not self.computer_enabled and not badge_on)
+
+    def speech_status(self):
+        computer = ComputerSpeaker.speech_status(self)
+        badge_on = self.passport_settings.enabled and self.passport_settings.voiceEnabled
+        ready = (self.computer_enabled and computer["ready"]) or (badge_on and self.passport.ready())
+        return dict(computer,ready=bool(ready),computerReady=computer["ready"],
+                    error="" if ready else computer["error"],computerError=computer["error"],fixedPhrases=not self.computer_enabled and badge_on)
+
+    def busy(self):
+        return ComputerSpeaker.busy(self) or (self.passport_settings.enabled and self.passport.busy())
+
+    def speak_to(self, alert_id, text, kind, target=None):
+        if self.busy():
+            return False
+        started = False
+        if self.computer_enabled and target in (None,"computer"):
+            started = ComputerSpeaker.speak(self,alert_id,text)
+        self.last_badge_started = False
+        if self.passport_settings.enabled and self.passport_settings.voiceEnabled and target in (None,"passport"):
+            self.last_badge_started = self.passport.speak(alert_id,kind)
+            started = self.last_badge_started or started
+        if started:
+            self.last_alert_id = alert_id
+        return started
+
+    def speak_kind(self,alert_id,text,kind):
+        return self.speak_to(alert_id,text,kind)
+
+    def speak(self,alert_id,text):
+        # A custom-voice preview belongs to the computer. Legacy constructor
+        # callers remain compatible; stored preferences migrate before init.
+        if self.legacy_passport_mode:
+            return self.speak_to(alert_id,text,"test",target="passport")
+        return self.computer_enabled and ComputerSpeaker.speak(self,alert_id,text)
+
+    def stop(self,alert_id=None):
+        self.passport.stop(alert_id)
+        ComputerSpeaker.stop(self,alert_id)
+        if alert_id is None or self.last_alert_id==alert_id:
+            self.last_alert_id = None
 
 
 class Engine:
     def __init__(self, speaker, now=time.time, enabled=True, speech_settings=None, pause_minutes=DEFAULT_PAUSE_MINUTES, usage_reset_enabled=True, usage_low_enabled=True, usage_low_threshold=20, reminder_rules=None, quiet_hours=None):
+        self.passport_error = ""
+        self.output_error = ""
         self.speaker = speaker
         self.now = now
         self.enabled = enabled
@@ -219,9 +337,22 @@ class Engine:
         self.verifying_threads = set()
         self.recovery = {"state": "ready", "restored": 0, "detail": "恢复记录已就绪"}
         self.sleeping = False
+        self.activity = {}
 
     def rule(self, alert):
         return self.rules.get(alert["kind"], KindRule())
+
+    def play(self, key, text, kind):
+        target = self.alerts.get(key,{}).get("outputTarget")
+        accessory = getattr(self.speaker,"passport_settings",None)
+        if ((accessory and accessory.enabled and accessory.voiceEnabled and target in (None,"passport"))
+            or getattr(self.speaker,"audio_device_uid","") == PASSPORT_UID):
+            prepare = getattr(self,"before_device_play",None)
+            if prepare: prepare()
+        if hasattr(self.speaker,"speak_to"):
+            return self.speaker.speak_to(key,text,kind,target)
+        method = getattr(self.speaker,"speak_kind",None)
+        return method(key,text,kind) if method else self.speaker.speak(key,text)
 
     def quiet_blocks(self, kind=None):
         return self.quiet.active(self.now()) and not (kind == "approval" and self.quiet.allow_approval)
@@ -399,6 +530,8 @@ class Engine:
         if kind == "result":
             self.resolve_thread(str(event.get("thread", "")), kinds={"result"}, reason="已有更新结果")
         self.alerts[key] = {"id": key, "thread": str(event.get("thread", "")), "turn": str(event.get("turn", "")), "kind": kind, "title": clean_label(event.get("title")), "detail": str(event.get("detail", KINDS[kind]))[:150], "createdAt": created, "nextAt": created + max(0, float(event.get("delay", 0))), "count": 0, "state": "pending", "test": bool(event.get("test", False)), "requestId": str(event.get("requestId", "")), "source": str(event.get("source", "manual"))}
+        if kind == "test" and event.get("outputTarget") in ("computer","passport"):
+            self.alerts[key]["outputTarget"] = event["outputTarget"]
         self.alerts[key]["recoveryPending"] = self.alerts[key]["thread"] in self.verifying_threads
         self.history.append({"at": created, "action": "added", "id": key, "kind": kind})
 
@@ -418,6 +551,20 @@ class Engine:
 
     def event(self, event):
         action = event.get("action", "add")
+        if action == "set_passport_settings":
+            try:
+                self.speaker.configure_passport(event.get("settings"))
+                self.passport_error = ""
+                return True
+            except ValueError as error:
+                self.passport_error = str(error); return False
+        if action == "set_computer_audio_enabled":
+            try:
+                self.speaker.configure_computer(event.get("enabled"))
+                self.output_error = ""
+                return True
+            except ValueError as error:
+                self.output_error = str(error); return False
         if action == "add":
             self.add(event)
         elif action in ("ack", "resolve"):
@@ -495,7 +642,9 @@ class Engine:
                 self.resolve(key, "全部已接手")
         elif action == "test":
             key = "test-" + str(uuid.uuid4())
-            self.add({"id": key, "thread": key, "kind": "test", "title": "语音提醒测试", "detail": "测试每隔 5、10、15 秒重复；点“已接手”应立即停止。", "test": True})
+            target = event.get("target") if event.get("target") in ("computer","passport") else None
+            title = "AI Passport 播报测试" if target == "passport" else "电脑播报测试" if target == "computer" else "语音提醒测试"
+            self.add({"id":key,"thread":key,"kind":"test","title":title,"detail":"测试每隔 5、10、15 秒重复；点“已接手”应立即停止。","test":True,"outputTarget":target})
         elif action == "clear_tests":
             for key, alert in list(self.alerts.items()):
                 if alert["test"]:
@@ -512,13 +661,15 @@ class Engine:
                     self.resolve(key, "提醒已关闭")
             self.history.append({"at": self.now(), "action": "enabled" if self.enabled else "disabled"})
         elif action == "set_audio_device":
-            interrupted = self.speaker.alert_id if self.speaker.busy() else None
-            if interrupted in self.alerts and (event.get("device", "") != self.speaker.audio_device or event.get("uid", "") != self.speaker.audio_device_uid):
+            computer_busy = ComputerSpeaker.busy(self.speaker) if isinstance(self.speaker,Speaker) else self.speaker.busy()
+            interrupted = self.speaker.alert_id if computer_busy else None
+            retry = not getattr(self.speaker,"last_badge_started",False)
+            changed = event.get("device","") != self.speaker.audio_device or event.get("uid","") != self.speaker.audio_device_uid
+            if interrupted in self.alerts and changed and retry:
                 self.interrupt_current()
-            if self.speaker.set_device(event.get("device", ""), event.get("uid", "")):
-                if interrupted in self.alerts:
-                    self.alerts[interrupted]["nextAt"] = self.now()
-                self.history.append({"at": self.now(), "action": "audio_device_changed", "device": self.speaker.audio_device or "跟随系统输出"})
+            if self.speaker.set_device(event.get("device",""),event.get("uid","")):
+                if interrupted in self.alerts and retry: self.alerts[interrupted]["nextAt"] = self.now()
+                self.history.append({"at":self.now(),"action":"audio_device_changed","device":self.speaker.audio_device or "跟随系统输出"})
         elif action == "refresh_audio":
             self.speaker.next_device_check = 0
             self.speaker.refresh_audio()
@@ -611,7 +762,7 @@ class Engine:
                 return
             if self.usage_low_enabled and self.pending_usage_low:
                 event = self.pending_usage_low
-                if self.speaker.speak(USAGE_LOW_ID + event["id"], self.usage_low_text(event)):
+                if self.play(USAGE_LOW_ID + event["id"], self.usage_low_text(event), "usage-low"):
                     self.pending_usage_low = None
                     self.spoken_usage_lows.extend(w["key"] for w in event["windows"])
                     self.last_spoken = now
@@ -622,7 +773,7 @@ class Engine:
                 return
             if self.usage_reset_enabled and self.usage_reset_queue:
                 event = self.usage_reset_queue[0]
-                if self.speaker.speak(USAGE_RESET_ID + event["id"], self.usage_reset_text(event)):
+                if self.play(USAGE_RESET_ID + event["id"], self.usage_reset_text(event), "usage-reset"):
                     self.usage_reset_queue.popleft()
                     self.last_spoken = now
                     if self.last_usage_reset.get("id") == event["id"]:
@@ -632,7 +783,7 @@ class Engine:
         alert = due[0]
         phrase = {"approval": "需要你审批", "question": "有问题需要你回答", "result": "已有结果，请查看", "blocked": "需要你关注", "test": "请点已接手，测试停止播报"}[alert["kind"]]
         text = self.speech_text(alert["title"], phrase)
-        if self.speaker.speak(alert["id"], text):
+        if self.play(alert["id"], text, alert["kind"]):
             schedule = (5, 10, 15) if alert["test"] else self.rule(alert).intervals or self.speech.intervals
             alert["nextAt"] = now + schedule[min(alert["count"], len(schedule) - 1)]
             alert["lastSpokenAt"] = now
@@ -644,7 +795,7 @@ class Engine:
 
     def snapshot(self):
         audio = self.speaker.audio_status() if hasattr(self.speaker, "audio_status") else {}
-        speaking = self.speaker.alert_id if self.speaker.busy() else None
+        speaking = self.speaker.active_alert_id() if hasattr(self.speaker,"active_alert_id") else self.speaker.alert_id if self.speaker.busy() else None
         speech = self.speech.to_dict()
         speech.update(self.speaker.speech_status() if hasattr(self.speaker, "speech_status") else {"ready": True, "voices": [], "error": ""})
         speech.update(settingsError=self.settings_error, previewError=self.preview_error, previewing=speaking == PREVIEW_ID)
@@ -652,7 +803,7 @@ class Engine:
         low_announcement = {"enabled": self.usage_low_enabled, "threshold": self.usage_low_threshold, "previewing": speaking == USAGE_LOW_PREVIEW_ID, "error": self.usage_low_error, "lastWarning": self.last_usage_low}
         alerts = [dict(a, voiceEnabled=self.rule(a).enabled, playLimit=self.rule(a).max_plays,
                        limitReached=bool(self.rule(a).max_plays and a["count"] >= self.rule(a).max_plays)) for a in self.alerts.values()]
-        return {"version": VERSION, "at": self.now(), "enabled": self.enabled, "mutedUntil": self.muted_until, "pause": {"minutes": self.pause_minutes, "error": self.pause_error}, "speakingId": speaking, "audio": audio, "speech": speech, "usageAnnouncement": announcement, "usageLowAnnouncement": low_announcement, "reminderRules": {k:v.to_dict() for k,v in self.rules.items()}, "rulesError": self.rules_error, "quietHours": dict(self.quiet.to_dict(), active=self.quiet.active(self.now()), error=self.quiet_error), "recovery": self.recovery, "alerts": sorted(alerts, key=lambda a: a["createdAt"], reverse=True), "monitor": self.monitor, "history": list(self.history)}
+        return {"version": VERSION, "at": self.now(), "enabled": self.enabled, "mutedUntil": self.muted_until, "pause": {"minutes": self.pause_minutes, "error": self.pause_error}, "speakingId": speaking, "audio": audio, "passport": dict(self.speaker.passport_status(),settingsError=self.passport_error) if hasattr(self.speaker,"passport_status") else {}, "outputError":self.output_error, "speech": speech, "usageAnnouncement": announcement, "usageLowAnnouncement": low_announcement, "reminderRules": {k:v.to_dict() for k,v in self.rules.items()}, "rulesError": self.rules_error, "quietHours": dict(self.quiet.to_dict(), active=self.quiet.active(self.now()), error=self.quiet_error), "recovery": self.recovery, "alerts": sorted(alerts, key=lambda a: a["createdAt"], reverse=True), "monitor": self.monitor, "activeTasks": list(self.activity.values())[:12], "history": list(self.history)}
 
 
 class RolloutAdapter:
@@ -802,6 +953,7 @@ class RolloutAdapter:
             if event in {"task_started", "task_complete", "turn_aborted"}:
                 self.engine.monitor["lastEventAt"] = self.engine.now()
             if event == "task_started":
+                self.engine.activity[thread] = {"title": self.title(thread), "thread": thread}
                 cursor["turn"] = payload.get("turn_id", "")
                 cursor["question"] = False
                 # Only a real composer turn acknowledges prior reminders.
@@ -810,11 +962,13 @@ class RolloutAdapter:
                     cursor.pop("truncated", None)
                     self.engine.resolve_thread(thread, reason="你已在此聊天继续操作")
             elif event == "task_complete":
+                self.engine.activity.pop(thread, None)
                 turn = payload.get("turn_id", cursor["turn"])
                 self.engine.resolve_thread(thread, {"approval"}, turn=turn)
                 if not cursor["question"]:
                     self.engine.add({"id": "result:" + thread + ":" + turn, "thread": thread, "turn": turn, "title": self.title(thread), "kind": "result", "source": "local-events"})
             elif event == "turn_aborted":
+                self.engine.activity.pop(thread, None)
                 self.engine.resolve_thread(thread, reason="本轮已取消", turn=cursor["turn"])
             return
         if kind != "response_item":
@@ -879,6 +1033,8 @@ def atomic_json(path, value):
 
 def save_preferences(path, settings, engine):
     settings.update(enabled=engine.enabled, audio_device=engine.speaker.audio_device, audio_device_uid=engine.speaker.audio_device_uid, speech=engine.speech.to_dict(), pause_minutes=engine.pause_minutes, usage_reset_announcement=engine.usage_reset_enabled, usage_low_announcement=engine.usage_low_enabled, usage_low_threshold=engine.usage_low_threshold)
+    if hasattr(engine.speaker,"passport_settings"):
+        settings.update(passport=engine.speaker.passport_settings.to_dict(),computer_audio_enabled=engine.speaker.computer_enabled)
     settings.update(reminder_rules={kind:rule.to_dict() for kind,rule in engine.rules.items()}, quiet_hours=engine.quiet.to_dict())
     atomic_json(path, settings)
 
@@ -910,11 +1066,17 @@ def main():
         settings = {}
     if not isinstance(settings, dict):
         settings = {}
-    engine = Engine(Speaker(str(settings.get("audio_device", "")), device_uid=str(settings.get("audio_device_uid", ""))),
+    migrated = migrate_preferences(settings)
+    if migrated != settings:
+        settings = migrated; atomic_json(state_dir / "settings.json",settings)
+    engine = Engine(Speaker(str(settings.get("audio_device", "")), device_uid=str(settings.get("audio_device_uid", "")),
+                    passport_emit=lambda event: print(json.dumps({"passportCommand": event}), flush=True)),
                     enabled=bool(settings.get("enabled", True)), speech_settings=settings.get("speech"),
                     pause_minutes=settings.get("pause_minutes", DEFAULT_PAUSE_MINUTES), usage_reset_enabled=settings.get("usage_reset_announcement", True),
                     usage_low_enabled=settings.get("usage_low_announcement", True), usage_low_threshold=settings.get("usage_low_threshold", 20),
                     reminder_rules=settings.get("reminder_rules"), quiet_hours=settings.get("quiet_hours"))
+    engine.speaker.configure_passport(settings["passport"])
+    engine.speaker.configure_computer(settings["computer_audio_enabled"])
     adapter = RolloutAdapter(engine, args.codex_dir)
     store = RecoveryStore(state_dir / "reminder-state.json")
     store.load(engine, adapter)
@@ -924,6 +1086,12 @@ def main():
         engine.on_usage_low_spoken = usage.mark_low_announced
         usage.start()
     commands = queue.Queue()
+    def prepare_device_state():
+        value = engine.snapshot()
+        if usage:
+            value["usage"] = usage.snapshot()
+        print(json.dumps(value, ensure_ascii=False), flush=True)
+    engine.before_device_play = prepare_device_state
     signal.signal(signal.SIGTERM, lambda *_: commands.put({"action":"quit"}))
     signal.signal(signal.SIGINT, lambda *_: commands.put({"action":"quit"}))
 
@@ -932,7 +1100,10 @@ def main():
             try:
                 command = json.loads(line)
                 if isinstance(command, dict):
-                    commands.put(command)
+                    if command.get("action") == "passport_feedback":
+                        engine.speaker.passport_feedback(command.get("event"))
+                    else:
+                        commands.put(command)
             except ValueError:
                 pass
         commands.put({"action": "quit"})
@@ -960,7 +1131,7 @@ def main():
                 usage.request_refresh()
             return
         accepted = engine.event(event)
-        if event.get("action") in ("set_enabled", "set_audio_device") or (event.get("action") in ("set_speech_settings", "set_pause_duration", "pause", "set_usage_reset_enabled", "set_usage_low_settings", "set_reminder_rules", "set_quiet_hours") and accepted):
+        if event.get("action") in ("set_enabled", "set_audio_device") or (event.get("action") in ("set_passport_settings", "set_computer_audio_enabled", "set_speech_settings", "set_pause_duration", "pause", "set_usage_reset_enabled", "set_usage_low_settings", "set_reminder_rules", "set_quiet_hours") and accepted):
             save_preferences(state_dir / "settings.json", settings, engine)
         store.save(engine, adapter, force=True)
     try:

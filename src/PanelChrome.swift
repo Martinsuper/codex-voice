@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum PanelChrome {
-    static let width: CGFloat = 410
+    static let width: CGFloat = 420
     static let arrowHeight: CGFloat = 10
     static let arrowHalfWidth: CGFloat = 10
     static let menuGap: CGFloat = 1

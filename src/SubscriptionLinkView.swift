@@ -35,8 +35,8 @@ struct SubscriptionServiceLink: View {
                         Text(SubscriptionWebsite.domain)
                     }.font(VoiceTheme.font(10)).foregroundColor(VoiceTheme.secondary)
                 }.padding(13).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(VoiceTheme.greenFill).clipShape(RoundedRectangle(cornerRadius: 10))
-                    .contentShape(RoundedRectangle(cornerRadius: 10))
+                    .background(VoiceTheme.greenFill).clipShape(RoundedRectangle(cornerRadius: 15,style:.continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 15,style:.continuous))
             }
         }
         .buttonStyle(.plain)

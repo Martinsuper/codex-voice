@@ -8,24 +8,28 @@ enum VoiceTheme {
             return NSColor(srgbRed: CGFloat((value >> 16) & 255) / 255, green: CGFloat((value >> 8) & 255) / 255, blue: CGFloat(value & 255) / 255, alpha: 1)
         })
     }
-    static let background = color(0xfafaf8, 0x242624)
-    static let paper = color(0xffffff, 0x2b2e2b)
-    static let ink = color(0x242b26, 0xedf1eb)
-    static let secondary = color(0x657066, 0xaeb9ad)
-    static let line = color(0xe5e9e2, 0x3d443d)
-    static let soft = color(0xf0f3ed, 0x343b33)
-    static let green = color(0x2f6850, 0x9bc9a8)
-    static let greenFill = color(0xe9f2e9, 0x33483a)
-    static let amber = color(0x996329, 0xe7b87c)
-    static let amberFill = color(0xfbf0df, 0x483b2b)
-    static let primary = color(0x293d32, 0xdce8dc)
-    static let primaryText = color(0xffffff, 0x24352a)
-    static let resultAction = color(0xb0312c, 0xb63b33)
-    static let switchOn = color(0x23805a, 0x37936c)
-    static let switchOff = color(0x929a94, 0x657067)
+    static let background = color(0xf5f5f7, 0x1c1c1e)
+    static let paper = color(0xffffff, 0x2c2c2e)
+    static let ink = Color(nsColor:.labelColor)
+    static let secondary = Color(nsColor:.secondaryLabelColor)
+    static let line = Color(nsColor:.separatorColor).opacity(0.55)
+    static let soft = color(0xeeeef2, 0x38383a)
+    static let accent = color(0x007aff,0x0a84ff)
+    static let green = accent
+    static let greenFill = accent.opacity(0.09)
+    static let success = Color(nsColor:.systemGreen)
+    static let successFill = success.opacity(0.10)
+    static let amber = color(0xb45309,0xffb340)
+    static let warningTint = Color(nsColor:.systemOrange)
+    static let amberFill = amber.opacity(0.10)
+    static let danger = Color(nsColor:.systemRed)
+    static let primary = accent
+    static let primaryText = Color.white
+    static let resultAction = accent
+    static let switchOn = Color(nsColor:.systemGreen)
+    static let switchOff = color(0xd1d1d6, 0x636366)
     static func font(_ size: CGFloat, medium: Bool = false) -> Font {
-        let name = medium ? "MiSans-Medium" : "MiSans-Regular"
-        return NSFont(name: name, size: size) == nil ? .system(size: size, weight: medium ? .medium : .regular) : .custom(name, size: size)
+        .system(size:size,weight:medium ? .semibold:.regular)
     }
 }
 
@@ -66,14 +70,17 @@ struct VoiceOutput: Identifiable {
         guard let name = raw["name"] as? String, let uid = raw["uid"] as? String else { return nil }
         self.name = name; id = uid; transport = raw["transport"] as? String ?? "other"
     }
-    var caption: String { ["builtIn":"Mac 内置扬声器", "bluetooth":"蓝牙音频设备", "usb":"USB 音频设备", "airplay":"AirPlay 设备", "virtual":"虚拟音频设备"][transport] ?? "音频输出设备" }
-    var symbol: String { transport == "bluetooth" ? "headphones" : transport == "airplay" ? "airplay.audio" : "speaker.wave.2" }
+    var caption: String { ["builtIn":"Mac 内置扬声器", "bluetooth":"蓝牙音频设备", "usb":"USB 音频设备", "airplay":"AirPlay 设备", "virtual":"虚拟音频设备", "passport":"随身工牌 · 预置中文语音，不随 Mac 音色调整"][transport] ?? "音频输出设备" }
+    var symbol: String { transport == "passport" ? "person.text.rectangle" : transport == "bluetooth" ? "headphones" : transport == "airplay" ? "airplay.audio" : "speaker.wave.2" }
 }
 
 final class VoicePanelModel: ObservableObject {
     @Published var snapshot: [String: Any] = [:]
     @Published var now = Date().timeIntervalSince1970
     @Published var settingsOpen = false
+    @Published var passportSettingsOpen = false
+    @Published var passportPetNameDraft = "Codex"
+    @Published var passportPetNameDraftBaseline = "Codex"
     @Published var speechSettingsOpen = false
     @Published var pauseDurationOpen = false
     @Published var usageOpen = false
@@ -90,11 +97,13 @@ final class VoicePanelModel: ObservableObject {
     @Published var listContentHeight: CGFloat = 160
     @Published var maximumListHeight: CGFloat = 380
     @Published var maximumSettingsHeight: CGFloat = 540
+    @Published var maximumMainContentHeight:CGFloat = 650
     var action: ([String: Any]) -> Void = { _ in }
     var changeStartup: (Bool) -> Void = { _ in }
     var hide: () -> Void = {}
     var retry: () -> Void = {}
     var connectCodex: () -> Void = {}
+    var setupPassport: () -> Void = {}
 
     var alerts: [VoiceAlert] {
         let items = (snapshot["alerts"] as? [[String: Any]] ?? []).compactMap(VoiceAlert.init)
@@ -106,6 +115,25 @@ final class VoicePanelModel: ObservableObject {
     var muted: Bool { mutedUntil > now }
     var pauseMinutes: Int { (snapshot["pause"] as? [String: Any])?["minutes"] as? Int ?? 15 }
     var pauseError: String { (snapshot["pause"] as? [String: Any])?["error"] as? String ?? "" }
+    var passport: [String:Any] {snapshot["passport"] as? [String:Any] ?? [:]}
+    var passportEnabled: Bool {passport["enabled"] as? Bool ?? false}
+    var passportConnected: Bool {passportEnabled && (passport["connected"] as? Bool ?? false)}
+    var passportVoiceEnabled: Bool {passport["voiceEnabled"] as? Bool ?? false}
+    var passportPetName: String {passport["petName"] as? String ?? "Codex"}
+    var passportPetNameSupported: Bool {passport["petNameSupported"] as? Bool ?? false}
+    var passportFirmware: String {passport["firmware"] as? String ?? ""}
+    var petSync:[String:Any] {passport["petSync"] as? [String:Any] ?? [:]}
+    var petSyncDetail:String {petSync["detail"] as? String ?? "连接后自动同步 Codex 当前宠物"}
+    var petSyncProgress:Double {Double(petSync["progress"] as? Int ?? 0)}
+    var petSyncHash:String {petSync["sha"] as? String ?? ""}
+    var petPreview:NSImage? {NSImage(contentsOf:AppPaths.runtime.appendingPathComponent("pet-cache/preview.png"))}
+    var passportLinkError: String {(passport["error"] as? String).flatMap {$0.isEmpty ? nil : $0} ?? "确认工牌已开机、在 Mac 附近；恢复后会自动连接。"}
+    var passportSettingsError: String {passport["settingsError"] as? String ?? ""}
+    var computerAudioEnabled: Bool {audio["computerEnabled"] as? Bool ?? true}
+    var computerAudioReady: Bool {audio["computerReady"] as? Bool ?? audioReady}
+    var silentOutputs: Bool {audio["silent"] as? Bool ?? false}
+    var canTestPassport: Bool {connected && enabled && passportConnected && passportVoiceEnabled && !muted && !quietActive}
+    func configurePassport(_ patch:[String:Any]) {action(["action":"set_passport_settings","settings":patch])}
     var audio: [String: Any] { snapshot["audio"] as? [String: Any] ?? [:] }
     var device: String { audio["device"] as? String ?? "播报设备" }
     var audioAvailable: Bool { audio["available"] as? Bool ?? false }
@@ -125,7 +153,7 @@ final class VoicePanelModel: ObservableObject {
     var usageLowPreviewing: Bool { usageLowAnnouncement["previewing"] as? Bool ?? false }
     var usageLowError: String { usageLowAnnouncement["error"] as? String ?? "" }
     var followSystem: Bool { audio["followSystem"] as? Bool ?? false }
-    var outputs: [VoiceOutput] { (audio["devices"] as? [[String: Any]] ?? []).compactMap(VoiceOutput.init) }
+    var outputs: [VoiceOutput] { (audio["devices"] as? [[String: Any]] ?? []).compactMap(VoiceOutput.init).filter {$0.id != PassportProtocol.uid} }
     var defaultName: String { audio["defaultName"] as? String ?? "" }
     var displayDevice: String { followSystem ? "跟随系统输出" : device }
     var speech: [String: Any] { snapshot["speech"] as? [String: Any] ?? [:] }
@@ -163,7 +191,9 @@ final class VoicePanelModel: ObservableObject {
     var canPlay: Bool { connected && enabled && audioReady && speechReady && !muted && !quietActive }
     func canPlay(_ alert: VoiceAlert) -> Bool { connected && enabled && audioReady && speechReady && !muted && (!quietActive || (alert.kind == "approval" && allowQuietApproval)) }
     var audioNote: String {
-        if !audioAvailable { return "未连接 · 待处理事项已保留" }
+        if !computerAudioEnabled {return "电脑播报已关闭"}
+        if !(audio["computerAvailable"] as? Bool ?? audioAvailable) {return "电脑扬声器未连接"}
+        if !computerAudioReady {return audio["computerError"] as? String ?? "电脑扬声器暂不可用"}
         if !audioReady { return audio["error"] as? String ?? "扬声器暂时无法播报" }
         if followSystem { return speaking ? "正在播报 · 接手后停止" : "当前：" + device }
         return speaking ? "正在播报 · 接手后停止" : "已连接 · 声音从此设备播放"
@@ -172,6 +202,7 @@ final class VoicePanelModel: ObservableObject {
         if let error = serviceError { return (serviceRecovering ? "正在恢复提醒服务" : "提醒服务需要检查", error, "exclamationmark", 1) }
         if !connected { return ("正在连接", "准备好后，有事我会喊你", "waveform", 0) }
         if !enabled { return ("提醒已关闭", "重新开启后，只接收新的提醒", "bell.slash", 0) }
+        if silentOutputs {return ("仅显示提醒","电脑和工牌的任务语音均已关闭","bell.slash",0)}
         if !audioAvailable { return ("扬声器未连接", "待处理事项会保留，连接后继续播报", "speaker.slash", 1) }
         if !audioReady { return ("扬声器暂时无法播报", audioNote, "speaker.slash", 1) }
         if let error = speech["error"] as? String, !error.isEmpty { return ("播报声音需要检查", error, "waveform", 1) }
@@ -180,7 +211,7 @@ final class VoicePanelModel: ObservableObject {
         if !alerts.isEmpty { return ("\(alerts.count) 件事需要你", "重要的事，听到后再来处理", "bell.badge", 1) }
         if !eventsAvailable { return ("等待 Codex 连接", "未读到本机任务事件，请先打开 Codex", "link", 0) }
         if !connectionConfigured { return ("完成提醒已就绪", "连接 Codex，以增加审批与提问提醒", "checkmark", 2) }
-        return ("一切就绪", "有结果、等确认时，我会喊你", "checkmark", 2)
+        return ("一切就绪", "有新结果或需要确认时，会及时提醒你", "checkmark", 2)
     }
     func meta(_ alert: VoiceAlert) -> String {
         if !connected { return "服务连接中 · 待处理事项已保留" }
@@ -206,7 +237,7 @@ final class VoicePanelModel: ObservableObject {
     func setPause(minutes: Int, start: Bool) { action(["action": start ? "pause" : "set_pause_duration", "minutes": minutes]) }
 }
 
-private struct PanelButtonStyle: ButtonStyle {
+struct PanelButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
     enum Kind { case primary, secondary, quiet, icon }
     var kind: Kind = .secondary
@@ -217,13 +248,13 @@ private struct PanelButtonStyle: ButtonStyle {
             .padding(.horizontal, kind == .icon ? 8 : kind == .quiet ? 7 : 12)
             .padding(.vertical, 7)
             .background(kind == .primary ? VoiceTheme.primary : kind == .secondary ? VoiceTheme.paper : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
-            .overlay(RoundedRectangle(cornerRadius: 7).stroke(kind == .secondary ? VoiceTheme.line : Color.clear, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 8,style:.continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8,style:.continuous).stroke(kind == .secondary ? VoiceTheme.line : Color.clear, lineWidth: 0.7))
             .opacity(!enabled ? 0.4 : configuration.isPressed ? 0.72 : 1)
     }
 }
 
-private struct IconAction: View {
+struct IconAction: View {
     let symbol: String
     let label: String
     var disabled = false
@@ -239,12 +270,12 @@ private struct AcknowledgeButtonStyle: ButtonStyle {
     var isResult: Bool
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(VoiceTheme.font(15, medium: true))
-            .foregroundColor(isResult ? .white : VoiceTheme.primaryText)
-            .frame(width: 100, height: 64)
-            .background(isResult ? VoiceTheme.resultAction : VoiceTheme.primary)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .contentShape(RoundedRectangle(cornerRadius: 10))
+            .font(VoiceTheme.font(12, medium: true))
+            .foregroundColor(VoiceTheme.primaryText)
+            .frame(minWidth:76).padding(.horizontal,8).frame(height:32)
+            .background(VoiceTheme.primary)
+            .clipShape(Capsule())
+            .contentShape(Capsule())
             .opacity(configuration.isPressed ? 0.72 : 1)
     }
 }
@@ -326,6 +357,7 @@ struct VoicePanelView: View {
             else if model.rulesOpen { ReminderRulesView(model: model) }
             else if model.quietHoursOpen { QuietHoursView(model: model) }
             else if model.speechSettingsOpen { SpeechSettingsView(model: model) }
+            else if model.passportSettingsOpen { PassportSettingsView(model:model) }
             else if model.settingsOpen { settings }
             else { main }
         }
@@ -343,117 +375,120 @@ struct VoicePanelView: View {
             else if model.rulesOpen { model.rulesOpen = false }
             else if model.quietHoursOpen { model.quietHoursOpen = false }
             else if model.speechSettingsOpen { model.speechSettingsOpen = false }
+            else if model.passportSettingsOpen {model.passportSettingsOpen=false}
             else if model.settingsOpen { model.settingsOpen = false }
             else { model.hide() }
         }
     }
     private var main: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 9) {
-                Image(systemName: "waveform").font(.system(size: 15)).foregroundColor(VoiceTheme.green)
-                    .frame(width: 29, height: 29).background(VoiceTheme.soft).clipShape(RoundedRectangle(cornerRadius: 9))
-                Text("Codex 语音提醒").font(VoiceTheme.font(13, medium: true))
-                Spacer(minLength: 8)
+        VStack(spacing:0) {
+            HStack(spacing:10) {
+                Image(systemName:"waveform").font(.system(size:18,weight:.medium)).foregroundColor(.white)
+                    .frame(width:36,height:36).background(VoiceTheme.accent).clipShape(RoundedRectangle(cornerRadius:10,style:.continuous))
+                Text("Codex 语音提醒").font(VoiceTheme.font(15,medium:true)).tracking(-0.3)
+                Spacer(minLength:8)
                 enableToggle
-                IconAction(symbol: "ellipsis", label: "更多设置") { model.settingsOpen = true }
-            }.padding(.horizontal, 20).padding(.top, 17).padding(.bottom, 14)
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("当前状态").font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary)
-                    Text(model.heading.title).font(VoiceTheme.font(22, medium: true)).fixedSize(horizontal: false, vertical: true)
-                    Text(model.heading.subtitle).font(VoiceTheme.font(12)).foregroundColor(VoiceTheme.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 4)
-                Image(systemName: model.heading.icon).font(.system(size: 17, weight: .medium))
-                    .foregroundColor(model.heading.tone == 1 ? VoiceTheme.amber : model.heading.tone == 2 ? VoiceTheme.green : VoiceTheme.secondary)
-                    .frame(width: 38, height: 38)
-                    .background(model.heading.tone == 1 ? VoiceTheme.amberFill : model.heading.tone == 2 ? VoiceTheme.greenFill : VoiceTheme.soft)
-                    .clipShape(Circle())
-            }.padding(.horizontal, 21).padding(.top, 9).padding(.bottom, 19)
-            if model.serviceError != nil {
-                HStack { Text("待处理事项保留在原聊天中").font(VoiceTheme.font(12)); Spacer(); Button("重新连接", action: model.retry).buttonStyle(PanelButtonStyle()) }
-                    .padding(12).background(VoiceTheme.amberFill).clipShape(RoundedRectangle(cornerRadius: 9)).padding(.horizontal, 14).padding(.bottom, 12)
-            }
-            if model.alerts.isEmpty { emptyState }
-            else { ReminderList(model: model) }
-            if model.alerts.isEmpty, let title = model.recentTitle {
-                HStack { Text("最近处理"); Spacer(); Text(title + " · 已停止提醒").lineLimit(1).truncationMode(.middle) }
-                    .font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary).padding(.horizontal, 20).padding(.vertical, 12)
-                    .overlay(alignment: .top) { VoiceTheme.line.frame(height: 1) }
-            }
-            UsageSummaryRow(model: model)
-            deviceRow
-            HStack(spacing: 8) {
-                HStack(spacing: 0) {
-                    Button(action: model.pauseOrResume) { Label(model.muted ? "恢复提醒" : "暂停 \(model.pauseMinutes) 分钟", systemImage: model.muted ? "play" : "pause") }
-                        .buttonStyle(PanelButtonStyle(kind: .quiet)).disabled(!model.enabled || !model.connected)
-                    Menu {
-                        Text("默认时长：\(model.pauseMinutes) 分钟")
-                        Divider()
-                        ForEach([5, 15, 30, 60, 120], id: \.self) { minutes in
-                            Button(model.enabled ? "暂停 \(minutes) 分钟" : "设为 \(minutes) 分钟") {
-                                model.setPause(minutes: minutes, start: model.enabled)
-                            }
-                        }
-                        Divider()
-                        Button("自定义时长…") { model.pauseDurationOpen = true }
-                    } label: {
-                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .medium))
-                            .foregroundColor(VoiceTheme.secondary).frame(width: 22, height: 28).contentShape(Rectangle())
-                    }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().disabled(!model.connected)
-                        .accessibilityLabel("设置暂停时长，默认 \(model.pauseMinutes) 分钟").help("选择常用时长或自定义")
-                }
-                Spacer(minLength: 5)
-                if model.alerts.count > 1 {
-                    Button("全部已接手") { model.action(["action":"ack_all"]) }.buttonStyle(PanelButtonStyle(kind: .quiet))
-                        .help("停止当前所有提醒；审批仍在原聊天处理")
-                } else if model.alerts.isEmpty {
-                    Button("收起面板", action: model.hide).buttonStyle(PanelButtonStyle(kind: .quiet))
-                } else {
-                    Text("只在需要你时出声").font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary)
-                }
-            }.padding(.horizontal, 16).padding(.vertical, 10).background(VoiceTheme.soft)
+                IconAction(symbol:"gearshape",label:"更多设置") {model.settingsOpen=true}
+            }.padding(.horizontal,20).padding(.top,17).padding(.bottom,16)
+            ViewThatFits(in:.vertical) {
+                mainCards.fixedSize(horizontal:false,vertical:true)
+                ScrollView(.vertical) {mainCards}.frame(height:model.maximumMainContentHeight)
+            }.frame(maxHeight:model.maximumMainContentHeight)
+            footer
         }
+    }
+    private var mainCards:some View {
+        VStack(spacing:0) {
+            deviceRow
+            statusStrip
+            if !model.alerts.isEmpty {
+                HStack {
+                    Text("待处理").font(VoiceTheme.font(12,medium:true))
+                    Text("\(model.alerts.count)").font(.system(size:10,weight:.semibold,design:.rounded)).foregroundColor(VoiceTheme.secondary)
+                        .padding(.horizontal,6).padding(.vertical,2).background(VoiceTheme.soft).clipShape(Capsule())
+                    Spacer()
+                    Text("在原聊天中继续处理").font(VoiceTheme.font(10)).foregroundColor(VoiceTheme.secondary)
+                }.padding(.horizontal,21).padding(.top,3).padding(.bottom,10)
+                ReminderList(model:model)
+            }
+            UsageSummaryRow(model:model)
+            PassportAccessoryCard(model:model)
+        }
+    }
+    private var statusStrip: some View {
+        let tone=model.heading.tone
+        let tint=tone==1 ? VoiceTheme.amber : tone==2 ? VoiceTheme.success : VoiceTheme.accent
+        return HStack(spacing:10) {
+            Image(systemName:model.heading.icon).font(.system(size:14,weight:.semibold)).foregroundColor(tint)
+                .frame(width:33,height:33).background(tint.opacity(0.10)).clipShape(Circle())
+            VStack(alignment:.leading,spacing:3) {
+                Text(model.heading.title).font(VoiceTheme.font(14,medium:true))
+                Text(model.heading.subtitle).font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary).fixedSize(horizontal:false,vertical:true)
+            }
+            Spacer(minLength:4)
+            if model.serviceError != nil {
+                Button("重连",action:model.retry).buttonStyle(PanelButtonStyle())
+            } else if model.alerts.isEmpty {
+                if !model.connectionConfigured && model.connected {
+                    Button("连接",action:model.connectCodex).buttonStyle(PanelButtonStyle())
+                } else {
+                    Button {model.action(["action":"test"])} label: {
+                        Image(systemName:"play.fill").font(.system(size:11)).frame(width:30,height:30)
+                    }.buttonStyle(.plain).foregroundColor(VoiceTheme.accent).disabled(!model.canPlay)
+                        .accessibilityLabel("试听一下").help("试听已开启的输出，点「已接手」停止")
+                }
+            }
+        }.padding(12).frame(maxWidth:.infinity,alignment:.leading)
+            .background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius:15,style:.continuous))
+            .overlay(RoundedRectangle(cornerRadius:15,style:.continuous).stroke(VoiceTheme.line,lineWidth:0.6))
+            .padding(.horizontal,18).padding(.bottom,12)
+    }
+    private var footer: some View {
+        HStack(spacing:5) {
+            Button(action:model.pauseOrResume) {
+                Label(model.muted ? "恢复提醒" : "暂停 \(model.pauseMinutes) 分钟",systemImage:model.muted ? "play" : "pause")
+            }.buttonStyle(PanelButtonStyle(kind:.quiet)).disabled(!model.enabled || !model.connected)
+            Menu {
+                Text("默认时长：\(model.pauseMinutes) 分钟")
+                Divider()
+                ForEach([5,15,30,60,120],id:\.self) { minutes in
+                    Button(model.enabled ? "暂停 \(minutes) 分钟" : "设为 \(minutes) 分钟") {model.setPause(minutes:minutes,start:model.enabled)}
+                }
+                Divider();Button("自定义时长…") {model.pauseDurationOpen=true}
+            } label: {
+                Image(systemName:"chevron.down").font(.system(size:9,weight:.semibold)).foregroundColor(VoiceTheme.secondary).frame(width:23,height:28)
+            }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().disabled(!model.connected)
+                .accessibilityLabel("设置暂停时长，默认 \(model.pauseMinutes) 分钟")
+            Spacer(minLength:4)
+            if model.alerts.count>1 {
+                Button("全部已接手") {model.action(["action":"ack_all"])}.buttonStyle(PanelButtonStyle(kind:.quiet)).foregroundColor(VoiceTheme.accent)
+            }
+            Button(action:model.hide) {Label("收起面板",systemImage:"chevron.up").padding(.horizontal,2)}
+                .buttonStyle(PanelButtonStyle(kind:.primary)).accessibilityLabel("收起面板")
+        }.padding(.horizontal,16).padding(.vertical,10)
+            .overlay(alignment:.top) {VoiceTheme.line.frame(height:0.6).padding(.horizontal,18)}
     }
     private var enableToggle: some View {
         Toggle("启用语音提醒", isOn: Binding(get: { model.enabled }, set: { model.action(["action":"set_enabled", "enabled":$0]) }))
             .toggleStyle(PersistentSwitchStyle()).labelsHidden().disabled(!model.connected)
             .help("关闭立即停喊，重新开启只接收新事项")
     }
-    private var emptyState: some View {
-        VStack(spacing: 10) {
-            HStack(alignment: .center, spacing: 4) {
-                ForEach(0..<7) { index in RoundedRectangle(cornerRadius: 2).fill(VoiceTheme.green.opacity([0.3,0.45,0.65,0.8,0.65,0.45,0.3][index])).frame(width: 3, height: [6,13,21,28,21,13,6][index]) }
-            }.frame(height: 28).padding(.bottom, 5).accessibilityHidden(true)
-            Text(model.enabled ? "现在没有等待处理的事" : "需要时，随时再开启").font(VoiceTheme.font(14, medium: true))
-            Text(!model.enabled ? "提醒已暂停接收，随时可以重新开启。" : !model.eventsAvailable ? "打开本机 Codex 后，再检查提醒连接。" : "你可以继续忙自己的工作。")
-                .font(VoiceTheme.font(12)).foregroundColor(VoiceTheme.secondary)
-            if model.enabled {
-                HStack(spacing: 7) {
-                    if !model.connectionConfigured { Button("连接 Codex", action: model.connectCodex).buttonStyle(PanelButtonStyle()) }
-                    Button("试听一下") { model.action(["action":"test"]) }.buttonStyle(PanelButtonStyle(kind: .quiet)).disabled(!model.canPlay)
-                        .help("创建一条测试提醒，点「已接手」停止重复播报")
-                }
-            } else {
-                Button("开启提醒") { model.action(["action":"set_enabled", "enabled":true]) }.buttonStyle(PanelButtonStyle(kind: .quiet)).disabled(!model.connected)
-            }
-        }.frame(maxWidth: .infinity).padding(.horizontal, 15).padding(.top, 21).padding(.bottom, 27)
-    }
     private var deviceRow: some View {
-        HStack(spacing: 9) {
-            Image(systemName: model.audioReady ? "speaker.wave.2" : "speaker.slash").font(.system(size: 16)).foregroundColor(model.audioReady ? VoiceTheme.green : VoiceTheme.amber).frame(width: 18)
-            VStack(alignment: .leading, spacing: 2) {
-                Button(action: model.openDevicePicker) {
-                    HStack(spacing: 5) {
-                        Text(model.displayDevice).font(VoiceTheme.font(12, medium: true)).lineLimit(1)
-                        Image(systemName: "chevron.up.chevron.down").font(.system(size: 9)).foregroundColor(VoiceTheme.secondary)
-                    }
-                }.buttonStyle(.plain).accessibilityLabel("选择播报设备，当前：\(model.displayDevice)").help("选择用于语音提醒的扬声器")
-                Text(model.audioNote).font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary).lineLimit(2)
-            }
-            Spacer(minLength: 5)
-            IconAction(symbol: "slider.horizontal.3", label: "播报设置") { model.settingsOpen = true }
-        }.padding(.horizontal, 20).padding(.vertical, 12).overlay(alignment: .top) { VoiceTheme.line.frame(height: 1) }
+        Button(action:model.openDevicePicker) {
+            HStack(spacing:11) {
+                Image(systemName:model.computerAudioEnabled && model.computerAudioReady ? "speaker.wave.2":"speaker.slash")
+                    .font(.system(size:18)).foregroundColor(model.computerAudioEnabled && model.computerAudioReady ? VoiceTheme.accent:VoiceTheme.secondary).frame(width:27)
+                VStack(alignment:.leading,spacing:4) {
+                    Text(model.displayDevice).font(VoiceTheme.font(13,medium:true)).lineLimit(1)
+                    Text(model.audioNote).font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary).lineLimit(2)
+                }
+                Spacer(minLength:5)
+                Image(systemName:"chevron.up.chevron.down").font(.system(size:11,weight:.medium)).foregroundColor(VoiceTheme.secondary)
+            }.padding(.horizontal,14).padding(.vertical,12).frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
+                .background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius:14,style:.continuous))
+                .overlay(RoundedRectangle(cornerRadius:14,style:.continuous).stroke(VoiceTheme.line,lineWidth:0.6))
+        }.buttonStyle(.plain).accessibilityLabel("选择播报设备，当前：\(model.displayDevice)").help("打开电脑播报与扬声器设置")
+            .padding(.horizontal,18).padding(.bottom,12)
     }
     private func settingRow<Content: View>(_ title: String, _ caption: String, @ViewBuilder control: () -> Content) -> some View {
         HStack(spacing: 12) {
@@ -487,7 +522,7 @@ struct VoicePanelView: View {
                 settingRow("声音与规则", model.voiceName + "\n" + model.intervalSummary) {
                     Button("调整") { model.speechSettingsOpen = true }.buttonStyle(PanelButtonStyle()).disabled(!model.connected)
                 }
-            }.background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 11)).overlay(RoundedRectangle(cornerRadius: 11).stroke(VoiceTheme.line, lineWidth: 1))
+            }.background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(VoiceTheme.line, lineWidth: 1))
             VStack(spacing: 0) {
                 settingRow("按类型设置提醒", "分别设置完成、审批、提问和异常的播报") {
                     Button("设置") { model.rulesOpen = true }.buttonStyle(PanelButtonStyle()).disabled(!model.connected)
@@ -496,7 +531,10 @@ struct VoicePanelView: View {
                 settingRow("定时免打扰", model.quietSummary) {
                     Button("设置") { model.quietHoursOpen = true }.buttonStyle(PanelButtonStyle()).disabled(!model.connected)
                 }
-            }.background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 11)).overlay(RoundedRectangle(cornerRadius: 11).stroke(VoiceTheme.line, lineWidth: 1)).padding(.top, 12)
+            }.background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(VoiceTheme.line, lineWidth: 1)).padding(.top, 12)
+            settingRow("AI Passport", "独立管理连接、配件播报与屏保昵称") {
+                Button("设置") {model.passportSettingsOpen=true}.buttonStyle(PanelButtonStyle())
+            }.padding(.top,12)
             Text("启动与运行").font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary).padding(.top, 20).padding(.bottom, 8)
             VStack(spacing: 0) {
                 settingRow("登录后自动启动", "后台安静运行，需要时再出现") {
@@ -504,7 +542,7 @@ struct VoicePanelView: View {
                 }
                 VoiceTheme.line.frame(height: 1)
                 settingRow("启用语音提醒", "关闭后不积压旧提醒") { enableToggle }
-            }.background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 11)).overlay(RoundedRectangle(cornerRadius: 11).stroke(VoiceTheme.line, lineWidth: 1))
+            }.background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(VoiceTheme.line, lineWidth: 1))
             Text("全部接手后自动收起；有新提醒时再出现。")
                 .font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary).padding(.top, 16)
             VStack(alignment: .leading, spacing: 8) {
@@ -514,7 +552,7 @@ struct VoicePanelView: View {
                     Button(model.connectionConfigured ? "重新安装连接" : "连接 Codex", action: model.connectCodex).buttonStyle(PanelButtonStyle())
                 }
                 Text(model.connectionMessage).font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary).fixedSize(horizontal: false, vertical: true)
-            }.padding(13).background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 11)).overlay(RoundedRectangle(cornerRadius: 11).stroke(VoiceTheme.line, lineWidth: 1)).padding(.top, 16)
+            }.padding(13).background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(VoiceTheme.line, lineWidth: 1)).padding(.top, 16)
                 }.padding(.bottom, 2)
             }.frame(height: model.maximumSettingsHeight)
             HStack {
@@ -528,18 +566,29 @@ struct VoicePanelView: View {
     private var devicePicker: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("播报设备").font(VoiceTheme.font(17, medium: true))
+                Text("声音输出").font(VoiceTheme.font(17, medium: true))
                 Spacer()
                 IconAction(symbol: "xmark", label: "返回") { model.devicePickerOpen = false }
             }.padding(.bottom, 6)
-            Text("选择用于语音提醒的扬声器")
+            Text("控制电脑播报，并选择扬声器")
                 .font(VoiceTheme.font(12)).foregroundColor(VoiceTheme.secondary).padding(.bottom, 18)
+            HStack(spacing:12) {
+                VStack(alignment:.leading,spacing:4) {
+                    Text("电脑播报").font(VoiceTheme.font(13,medium:true))
+                    Text("关闭后保留任务卡片，AI Passport 可独立播报。")
+                        .font(VoiceTheme.font(10)).foregroundColor(VoiceTheme.secondary).fixedSize(horizontal:false,vertical:true)
+                }
+                Spacer(minLength:4)
+                Toggle("电脑播报",isOn:Binding(get:{model.computerAudioEnabled},set:{model.action(["action":"set_computer_audio_enabled","enabled":$0])}))
+                    .toggleStyle(PersistentSwitchStyle()).labelsHidden().disabled(!model.connected)
+            }.padding(13).background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius:14,style:.continuous))
+                .overlay(RoundedRectangle(cornerRadius:14,style:.continuous).stroke(VoiceTheme.line,lineWidth:0.6)).padding(.bottom,12)
             VStack(spacing: 5) {
                 outputRow("跟随系统输出", caption: model.defaultName.isEmpty ? "使用 macOS 当前的输出设备" : "当前：" + model.defaultName, symbol: "speaker.wave.2", selected: model.followSystem) { model.chooseDevice(nil) }
                 VoiceTheme.line.frame(height: 1).padding(.vertical, 5)
                 if model.outputs.count > 5 { ScrollView { outputChoices }.frame(height: 320) }
                 else { outputChoices }
-                if !model.audioAvailable && !model.followSystem {
+                if !(model.audio["computerAvailable"] as? Bool ?? model.audioAvailable) && !model.followSystem {
                     HStack {
                         Image(systemName: "speaker.slash").frame(width: 22)
                         Text(model.device + " · 未连接").font(VoiceTheme.font(12))
@@ -547,8 +596,8 @@ struct VoicePanelView: View {
                         Image(systemName: "checkmark")
                     }.foregroundColor(VoiceTheme.secondary).padding(12)
                 }
-            }.padding(6).background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 11))
-                .overlay(RoundedRectangle(cornerRadius: 11).stroke(VoiceTheme.line, lineWidth: 1))
+            }.padding(6).background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(VoiceTheme.line, lineWidth: 1))
             Text("未出现的蓝牙或 AirPlay 设备，请先在 macOS 中连接。")
                 .font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary).fixedSize(horizontal: false, vertical: true).padding(.top, 14)
             HStack {
@@ -588,7 +637,7 @@ private struct ReminderList: View {
         ScrollView(.vertical, showsIndicators: model.listContentHeight > model.maximumListHeight) {
             VStack(spacing: 9) {
                 ForEach(model.alerts) { alert in ReminderCard(alert: alert, model: model) }
-            }.padding(.horizontal, 13).padding(.bottom, 14)
+            }.padding(.horizontal, 18).padding(.bottom, 12)
                 .background(GeometryReader { geometry in Color.clear.preference(key: ListHeightKey.self, value: geometry.size.height) })
         }
         .frame(height: min(model.listContentHeight, model.maximumListHeight))
@@ -597,40 +646,43 @@ private struct ReminderList: View {
 }
 
 private struct ReminderCard: View {
-    let alert: VoiceAlert
-    @ObservedObject var model: VoicePanelModel
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Text(alert.title).font(VoiceTheme.font(12, medium: true)).lineLimit(1).truncationMode(.middle).help(alert.title)
-                Spacer(minLength: 4)
-                HStack(spacing: 5) {
-                    Circle().fill(alert.isResult ? VoiceTheme.green : VoiceTheme.amber).frame(width: 5, height: 5)
-                    Text(alert.badge).font(VoiceTheme.font(11)).foregroundColor(alert.isResult ? VoiceTheme.green : VoiceTheme.amber)
-                }.fixedSize()
-            }.padding(.bottom, 9)
-            HStack(alignment: .center, spacing: 14) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(alert.summary).font(VoiceTheme.font(15, medium: true)).fixedSize(horizontal: false, vertical: true)
-                        .help(alert.detail.isEmpty ? alert.summary : alert.detail)
-                    Text(model.meta(alert)).font(VoiceTheme.font(11)).monospacedDigit().foregroundColor(VoiceTheme.secondary).padding(.top, 5)
-                    HStack(spacing: 7) {
-                        Menu {
-                            ForEach([5,15,30], id: \.self) { minutes in Button("\(minutes) 分钟") { model.action(["action":"snooze", "id":alert.id, "seconds":minutes * 60]) } }
-                        } label: { Text("稍后").font(VoiceTheme.font(12)).foregroundColor(VoiceTheme.secondary).padding(.horizontal, 7).padding(.vertical, 6) }
-                            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("选择稍后提醒的时间")
-                        IconAction(symbol: "speaker.wave.2", label: "再次播报「\(alert.title)」", disabled: !model.canPlay(alert)) { model.action(["action":"replay", "id":alert.id]) }
-                        Spacer(minLength: 0)
-                    }.padding(.top, 11)
-                }.frame(maxWidth: .infinity, alignment: .leading)
-                Button(alert.ackTitle) { model.action(["action":"ack", "id":alert.id]) }
-                    .buttonStyle(AcknowledgeButtonStyle(isResult: alert.isResult))
-                    .accessibilityIdentifier("ack-" + alert.id)
-                    .help(alert.kind == "approval" ? "停止这条提醒，审批仍在原聊天处理" : "停止这条提醒")
+    let alert:VoiceAlert
+    @ObservedObject var model:VoicePanelModel
+    private var tint:Color {
+        switch alert.kind {case "result":return VoiceTheme.success;case "blocked":return VoiceTheme.danger;case "approval":return VoiceTheme.amber;default:return VoiceTheme.accent}
+    }
+    private var symbol:String {
+        ["result":"checkmark.circle.fill","approval":"hand.raised.fill","question":"questionmark.bubble.fill","blocked":"exclamationmark.triangle.fill","test":"speaker.wave.2.fill"][alert.kind] ?? "bell.fill"
+    }
+    var body:some View {
+        VStack(alignment:.leading,spacing:10) {
+            HStack(spacing:8) {
+                Label(alert.badge,systemImage:symbol).font(VoiceTheme.font(10,medium:true)).foregroundColor(tint)
+                    .padding(.horizontal,8).padding(.vertical,4).background(tint.opacity(0.09)).clipShape(Capsule())
+                Spacer(minLength:4)
+                Text(model.meta(alert)).font(VoiceTheme.font(10)).monospacedDigit().foregroundColor(VoiceTheme.secondary).lineLimit(1).help(model.meta(alert))
             }
-        }.padding(15).frame(maxWidth: .infinity, alignment: .leading)
-            .background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(VoiceTheme.line, lineWidth: 1))
-            .accessibilityElement(children: .contain)
+            VStack(alignment:.leading,spacing:5) {
+                Text(alert.title).font(VoiceTheme.font(14,medium:true)).lineLimit(2).fixedSize(horizontal:false,vertical:true).help(alert.title)
+                Text(alert.summary).font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary).lineLimit(2)
+                    .help(alert.detail.isEmpty ? alert.summary:alert.detail)
+            }
+            HStack(spacing:5) {
+                Menu {
+                    ForEach([5,15,30],id:\.self) {minutes in Button("\(minutes) 分钟") {model.action(["action":"snooze","id":alert.id,"seconds":minutes*60])}}
+                } label: {
+                    HStack(spacing:4) {Image(systemName:"clock");Text("稍后");Image(systemName:"chevron.down").font(.system(size:8))}
+                        .font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary).padding(.horizontal,7).padding(.vertical,6)
+                }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("选择稍后提醒的时间")
+                IconAction(symbol:"speaker.wave.2",label:"再次播报「\(alert.title)」",disabled:!model.canPlay(alert)) {model.action(["action":"replay","id":alert.id])}
+                Spacer(minLength:5)
+                Button(alert.ackTitle) {model.action(["action":"ack","id":alert.id])}
+                    .buttonStyle(AcknowledgeButtonStyle(isResult:alert.isResult)).accessibilityIdentifier("ack-"+alert.id)
+                    .help(alert.kind=="approval" ? "停止这条提醒，审批仍在原聊天处理":"停止这条提醒")
+            }
+        }.padding(14).frame(maxWidth:.infinity,alignment:.leading)
+            .background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius:16,style:.continuous))
+            .overlay(RoundedRectangle(cornerRadius:16,style:.continuous).stroke(VoiceTheme.line,lineWidth:0.6))
+            .accessibilityElement(children:.contain)
     }
 }

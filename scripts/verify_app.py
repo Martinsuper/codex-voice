@@ -140,7 +140,7 @@ def main():
         moved.parent.mkdir();shutil.copytree(args.app,moved,symlinks=True)
         runtime=base/"profile";codex=base/"codex-profile";codex.mkdir()
         environment={key:value for key,value in os.environ.items() if not key.startswith("PYTHON") and key not in ["__PYVENV_LAUNCHER__","CODEX_HOME"]}
-        environment.update(PATH="/usr/bin:/bin:/usr/sbin:/sbin",CODEX_HOME=str(codex))
+        environment.update(PATH="/usr/bin:/bin:/usr/sbin:/sbin")
         executable=moved/"Contents/MacOS/CodexVoice"
         bundle_info = plistlib.loads((moved/'Contents/Info.plist').read_bytes())
         expected_version = (Path(__file__).resolve().parent.parent/'VERSION').read_text().strip()

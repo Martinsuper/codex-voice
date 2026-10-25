@@ -100,26 +100,60 @@ def compile_universal(build, target, sources, frameworks):
     run("/usr/bin/lipo", "-create", *slices, "-output", target)
 
 
+def package_app(build, app):
+    dist = ROOT/"dist";dist.mkdir(exist_ok=True)
+    staging = build/"dmg"
+    if staging.exists(): shutil.rmtree(staging)
+    staging.mkdir();shutil.copytree(app, staging/app.name, symlinks=True)
+    (staging/"Applications").symlink_to("/Applications")
+    shutil.copy2(ROOT/"docs/INSTALL.txt", staging/"安装与使用说明.txt")
+    archive = dist/("CodexVoice-"+VERSION+"-universal.zip")
+    if archive.exists(): archive.unlink()
+    run("/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", app, archive)
+    image = dist/("CodexVoice-"+VERSION+"-universal.dmg")
+    run("/usr/bin/hdiutil", "create", "-volname", "Codex 语音提醒", "-srcfolder", staging, "-ov", "-format", "UDZO", image)
+    assets = [archive, image]
+    (dist/"SHA256SUMS.txt").write_text("".join(hashlib.sha256(path.read_bytes()).hexdigest()+"  "+path.name+"\n" for path in assets))
+    print("Packaged "+str(dist), flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--cache", type=Path, default=ROOT/".build-cache")
     parser.add_argument("--identity", default="-")
     parser.add_argument("--package", action="store_true")
+    parser.add_argument("--package-only", action="store_true", help="Package an existing verified build with current documentation")
+    parser.add_argument("--passport-test", action="store_true", help="Build a separately identified temporary Passport app")
     args = parser.parse_args()
     build = ROOT/".build";build.mkdir(exist_ok=True)
-    app = build/"Codex 语音提醒.app"
+    app = build/("Codex 工牌联调.app" if args.passport_test else "Codex 语音提醒.app")
+    if args.package_only:
+        info = plistlib.loads((app/"Contents/Info.plist").read_bytes())
+        if info.get("CodexVoiceVersion") != VERSION:
+            raise RuntimeError("Existing build version does not match VERSION; rebuild first")
+        run("/usr/bin/codesign", "--verify", "--deep", "--strict", app)
+        package_app(build, app)
+        return
     if app.exists(): shutil.rmtree(app)
     resources = app/"Contents/Resources";resources.mkdir(parents=True)
     (app/"Contents/MacOS").mkdir()
     (app/"Contents/Frameworks").mkdir()
-    info = {"CFBundleDisplayName":"Codex 语音提醒", "CFBundleName":"CodexVoice", "CFBundleExecutable":"CodexVoice", "CFBundleIdentifier":"local.rico.CodexVoice", "CFBundlePackageType":"APPL", "CFBundleShortVersionString":VERSION.split("-")[0], "CFBundleVersion":"9", "CodexVoiceVersion":VERSION, "LSMinimumSystemVersion":"13.0", "LSUIElement":True, "NSHighResolutionCapable":True, "CFBundleIconFile":"AppIcon.icns"}
+    info = {"CFBundleDisplayName":"Codex 语音提醒", "CFBundleName":"CodexVoice", "CFBundleExecutable":"CodexVoice", "CFBundleIdentifier":"local.rico.CodexVoice", "CFBundlePackageType":"APPL", "CFBundleShortVersionString":VERSION.split("-")[0], "CFBundleVersion":"37", "CodexVoiceVersion":VERSION, "LSMinimumSystemVersion":"13.0", "LSUIElement":True, "NSHighResolutionCapable":True, "CFBundleIconFile":"AppIcon.icns"}
+    if args.passport_test:
+        info.update(CFBundleDisplayName="Codex 工牌联调", CFBundleName="CodexPassport",
+                    CFBundleIdentifier="local.rico.CodexVoice.Passport", CFBundleVersion="30")
     (app/"Contents/Info.plist").write_bytes(plistlib.dumps(info))
-    for name in ["voice_engine.py", "speech_settings.py", "codex_usage.py", "reminder_rules.py", "reminder_recovery.py", "voice_bridge.py", "hook_setup.py", "runtime_info.py"]:
+    info["NSBluetoothAlwaysUsageDescription"] = "连接你的 AI Passport 工牌，同步任务状态、播放提醒并接收按键操作。"
+    (app/"Contents/Info.plist").write_bytes(plistlib.dumps(info))
+    for name in ["voice_engine.py", "passport_output.py", "accessory_settings.py", "pet_source.py", "speech_settings.py", "codex_usage.py", "reminder_rules.py", "reminder_recovery.py", "voice_bridge.py", "hook_setup.py", "runtime_info.py"]:
         shutil.copy2(ROOT/"src"/name, resources/name)
-    compile_universal(build, app/"Contents/MacOS/CodexVoice", [ROOT/"src"/name for name in ["VoiceApp.swift","AppPaths.swift","VoiceAppRuntime.swift","VoicePanel.swift","SpeechSettingsView.swift","PanelChrome.swift","UsageView.swift","SubscriptionLinkView.swift","ReminderSettingsView.swift","ServiceRecovery.swift"]], ["AppKit","SwiftUI"])
+    shutil.copy2(ROOT/"assets/passport/ai-passport-front.png",resources/"AIPassport.png")
+    shutil.copy2(ROOT/"assets/passport/nomi-idle.png",resources/"PetNOMI.png")
+    compile_universal(build, app/"Contents/MacOS/CodexVoice", [ROOT/"src"/name for name in ["VoiceApp.swift","AppPaths.swift","VoiceAppRuntime.swift","VoicePanel.swift","SpeechSettingsView.swift","PanelChrome.swift","UsageView.swift","UsageGauge.swift","SubscriptionLinkView.swift","ReminderSettingsView.swift","ServiceRecovery.swift","PassportProtocol.swift","PassportLink.swift","PassportAudio.swift","PassportSpeech.swift","PassportDictation.swift","PassportInput.swift","PassportSettingsView.swift","PassportPetAsset.swift","PassportPetSync.swift"]], ["AppKit","SwiftUI","CoreBluetooth","CryptoKit","Speech","AVFoundation","ApplicationServices","ImageIO"])
     compile_universal(build, resources/"AudioDeviceInfo", [ROOT/"src/AudioDeviceInfo.swift"], ["CoreAudio"])
     expanded = acquire_runtime(args.cache.resolve())
     binaries = embed_runtime(expanded, app/"Contents/Frameworks/Python.framework")
+    shutil.copy2(ROOT/"assets/passport/FoloToy-LICENSE.txt",resources/"ThirdPartyLicenses/FoloToy-LICENSE.txt")
     iconset = build/"AppIcon.iconset"
     run("/usr/bin/xcrun", "swiftc", "-module-cache-path", build/"swift-cache", "-target", platform.machine()+"-apple-macos13.0", ROOT/"scripts/IconGenerator.swift", "-o", build/"IconGenerator", "-framework", "AppKit")
     run(build/"IconGenerator", iconset)
@@ -133,20 +167,8 @@ def main():
     run("/usr/bin/codesign", "--verify", "--deep", "--strict", app)
     print("Built "+str(app), flush=True)
     if args.package:
-        dist = ROOT/"dist";dist.mkdir(exist_ok=True)
-        staging = build/"dmg"
-        if staging.exists(): shutil.rmtree(staging)
-        staging.mkdir();shutil.copytree(app, staging/app.name, symlinks=True)
-        (staging/"Applications").symlink_to("/Applications")
-        shutil.copy2(ROOT/"docs/INSTALL.txt", staging/"安装与使用说明.txt")
-        archive = dist/("CodexVoice-"+VERSION+"-universal.zip")
-        if archive.exists(): archive.unlink()
-        run("/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", app, archive)
-        image = dist/("CodexVoice-"+VERSION+"-universal.dmg")
-        run("/usr/bin/hdiutil", "create", "-volname", "Codex 语音提醒", "-srcfolder", staging, "-ov", "-format", "UDZO", image)
-        assets = [archive, image]
-        (dist/"SHA256SUMS.txt").write_text("".join(hashlib.sha256(path.read_bytes()).hexdigest()+"  "+path.name+"\n" for path in assets))
-        print("Packaged "+str(dist), flush=True)
+        package_app(build, app)
+
 
 
 if __name__ == "__main__":main()

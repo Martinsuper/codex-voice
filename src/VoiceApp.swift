@@ -32,7 +32,7 @@ enum LoginStartup {
         if enabled {
             let executable = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/CodexVoice").path
             guard FileManager.default.isExecutableFile(atPath: executable) else { throw StartupError.failed("找不到提醒应用，请从完整的 CodexVoice.app 打开。") }
-            let config: [String: Any] = ["Label": label, "ProgramArguments": [executable, "--background"], "RunAtLoad": true, "KeepAlive": false, "LimitLoadToSessionType": "Aqua", "ProcessType": "Interactive", "AssociatedBundleIdentifiers": ["local.rico.CodexVoice"]]
+            let config: [String: Any] = ["Label": label, "ProgramArguments": [executable, "--background"], "RunAtLoad": true, "KeepAlive": false, "LimitLoadToSessionType": "Aqua", "ProcessType": "Interactive", "AssociatedBundleIdentifiers": [Bundle.main.bundleIdentifier ?? AppPaths.identifier]]
             try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
             let data = try PropertyListSerialization.data(fromPropertyList: config, format: .xml, options: 0)
             try data.write(to: path, options: .atomic)
