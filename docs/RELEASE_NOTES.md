@@ -32,7 +32,7 @@
 
 仅适配 FoloToy AI Passport（ESP32-C3、8 MB Flash、无 PSRAM）。完整刷写替换原程序，可能清除配对及设置；不应例行整片擦除。分段升级需先确认分区兼容。本次发布提供固件，不会自动改写你 USB 上的设备。
 
-[手把手安装/刷写/连接指南](https://github.com/superslash-rico/codex-voice/blob/v0.9.1-beta.1/docs/AI_PASSPORT.md) · [全部功能与使用方法](https://github.com/superslash-rico/codex-voice/blob/v0.9.1-beta.1/README.md) · [验证记录](https://github.com/superslash-rico/codex-voice/blob/v0.9.1-beta.1/docs/VALIDATION.md)
+[手把手安装/刷写/连接指南](https://github.com/Martinsuper/codex-voice/blob/v0.9.1-beta.1/docs/AI_PASSPORT.md) · [全部功能与使用方法](https://github.com/Martinsuper/codex-voice/blob/v0.9.1-beta.1/README.md) · [验证记录](https://github.com/Martinsuper/codex-voice/blob/v0.9.1-beta.1/docs/VALIDATION.md)
 
 ## 测试版边界
 

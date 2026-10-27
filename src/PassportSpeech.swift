@@ -6,7 +6,7 @@ enum PassportSpeechError: LocalizedError {
     case unavailable, model, format, empty
     var errorDescription: String? {
         switch self {
-        case .unavailable: return "本机听写需要 macOS 26 或更新版本。"
+        case .unavailable: return "本机识别引擎未就绪，请重新发起听写。"
         case .model: return "本机尚未安装简体中文语音模型，请先在系统中启用中文听写。"
         case .format: return "无法转换工牌音频。"
         case .empty: return "没有识别到讲话，请靠近工牌麦克风后重试。"

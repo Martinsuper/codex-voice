@@ -42,7 +42,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var outsideMouseMonitor:Any?
     var menuTrackingDepth=0
     var menuObservers:[NSObjectProtocol]=[]
-    lazy var passport = PassportLink { [weak self] event in self?.send(event) }
+    let dictation = PassportDictation()
+    lazy var passport = PassportLink(dictation: dictation) { [weak self] event in self?.send(event) }
+    lazy var piko: PikoLink = {
+        let link = PikoLink(credentialStore: PikoCredentialStore(directory: AppPaths.runtime.path)) { [weak self] event in self?.send(event) }
+        link.voiceSink = dictation.pikoSink
+        link.onStatus = { [weak self] state in self?.model.pikoState = state }
+        link.dictationBusy = { [weak self] in self?.dictation.activeID != nil }
+        link.speechSynthesizer = { text, completion in PassportAnnouncement.synthesize(text, completion: completion) }
+        return link
+    }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -60,8 +69,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.changeStartup = { [weak self] in self?.setStartup($0) }
         model.hide = { [weak self] in self?.hidePanel("manual-hide") }
         model.retry = { [weak self] in self?.manualReconnect() }
-        model.setupPassport = { [weak self] in self?.passport.dictation.showSetup() }
+        model.setupPassport = { [weak self] in self?.dictation.showSetup() }
+        model.beginPikoPairing = { [weak self] in self?.piko.beginPairing() }
+        model.forgetPiko = { [weak self] in self?.piko.forget() }
+        dictation.busyChanged = { [weak self] active in
+            self?.send(["action": "passport_feedback", "event": ["kind": "dictation", "active": active]])
+        }
+        dictation.pikoSend = { [weak self] frame in self?.piko.sendVoice(frame) }
         model.connectCodex = { [weak self] in self?.installConnection() }
+        model.connectOpencode = { [weak self] in self?.installOpencodeConnection() }
         model.maximumListHeight = max(110, min(340, (NSScreen.main?.visibleFrame.height ?? 900) - 520))
         model.maximumSettingsHeight = max(160, min(540, (NSScreen.main?.visibleFrame.height ?? 900) - 190))
         model.maximumMainContentHeight=max(180,(NSScreen.main?.visibleFrame.height ?? 900)-153)
@@ -248,7 +264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc func willSleep() {
-        passport.dictation.reset()
+        dictation.reset()
         sleeping = true
         send(["action":"prepare_sleep"])
     }
@@ -288,7 +304,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             buffer.removeSubrange(...index)
             guard let value = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
             if let command = value["passportCommand"] as? [String: Any] {
-                passport.command(command)
+                if command["transport"] as? String == "piko" { piko.command(command) }
+                else { passport.command(command) }
                 continue
             }
             if let error = value["error"] as? String { model.serviceError = error; continue }
@@ -302,6 +319,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if changed { model.listContentHeight = CGFloat(alerts.count) * 148 + CGFloat(max(0, alerts.count - 1)) * 9 + 14 }
             model.snapshot = value
             passport.update(value)
+            piko.update(value)
             model.serviceError = nil
             model.serviceRecovering = false
             lastSnapshotAt = Date()
@@ -366,6 +384,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let status = CodexConnection.run("--status")
         model.connectionConfigured = status["configured"] as? Bool ?? false
         model.connectionMessage = status["error"] as? String ?? (model.connectionConfigured ? "观察器已安装；信任状态请在 Codex 中检查" : "连接后增加审批与提问提醒")
+        let opencode = OpenCodeConnection.run("--status")
+        model.opencodeConfigured = opencode["configured"] as? Bool ?? false
+        model.opencodeMessage = opencode["error"] as? String ?? (model.opencodeConfigured ? "插件已安装；重启 OpenCode 后生效" : "连接后增加审批与完成提醒")
     }
     func installConnection() {
         let alert = NSAlert()
@@ -376,6 +397,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let result = CodexConnection.run("--install")
         refreshConnection()
         model.connectionMessage = result["error"] as? String ?? result["message"] as? String ?? "请在 Codex 中检查连接。"
+    }
+    func installOpencodeConnection() {
+        let alert = NSAlert()
+        alert.messageText = "连接 OpenCode 提醒"
+        alert.informativeText = "将向 OpenCode 配置目录安装一个本地观察插件，用于观察权限请求、任务完成、执行失败和会话删除。它只传递提醒元数据，不联网、不替你作任何决定。\n\n现有配置会备份，其他插件保留。安装后重启 OpenCode 生效。"
+        alert.addButton(withTitle: "安装连接"); alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let result = OpenCodeConnection.run("--install")
+        refreshConnection()
+        model.opencodeMessage = result["error"] as? String ?? result["message"] as? String ?? "请重启 OpenCode 以加载插件。"
     }
 
     func recordPanelState(_ reason: String) {
@@ -444,6 +475,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menuObservers.forEach {NotificationCenter.default.removeObserver($0)}
         menuObservers=[]
         passport.stop()
+        piko.stop()
         clock?.invalidate()
         restartWork?.cancel()
         NSWorkspace.shared.notificationCenter.removeObserver(self)

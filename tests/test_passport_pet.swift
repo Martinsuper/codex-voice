@@ -2,7 +2,6 @@ import Foundation
 import AppKit
 import ImageIO
 
-enum StartupError:Error {case failed(String)}
 @main struct PassportPetTests {
     static func fixture() throws -> Data {
         let w=1536,h=2288

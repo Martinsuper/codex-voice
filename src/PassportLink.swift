@@ -8,7 +8,7 @@ final class PassportLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelega
     static let txID = CBUUID(string: "EA37F003-4E2B-47EF-9501-6D79B932A001")
     static let voiceID = CBUUID(string: "EA37F004-4E2B-47EF-9501-6D79B932A001")
     static let assetID = CBUUID(string: "EA37F005-4E2B-47EF-9501-6D79B932A001")
-    let dictation = PassportDictation()
+    let dictation: PassportDictation
     var voiceSupported = false
     var voiceSubscribed = false
     let epoch = PassportProtocol.makeEpoch()
@@ -50,14 +50,14 @@ final class PassportLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelega
     var petNameSupported = false
     var timer: Timer?
 
-    init(sendAction: @escaping ([String: Any]) -> Void) {
+    init(dictation: PassportDictation, sendAction: @escaping ([String: Any]) -> Void) {
+        self.dictation = dictation
         self.sendAction = sendAction
         super.init()
         dictation.send = { [weak self] object in
             guard let self else { return }
             var frame = object; frame["epoch"] = self.epoch; self.send(frame)
         }
-        dictation.busyChanged = { [weak self] active in self?.feedback(["kind":"dictation","active":active]) }
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
     }
 

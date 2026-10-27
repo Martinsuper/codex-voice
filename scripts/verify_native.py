@@ -11,6 +11,9 @@ CASES = {
     "audio": (["PassportAudio.swift"], ["Foundation"]),
     "clipboard": (["PassportInput.swift", "PassportAudio.swift"], ["AppKit", "ApplicationServices"]),
     "pet": (["PassportPetAsset.swift", "PassportPetSync.swift", "PassportProtocol.swift", "AppPaths.swift"], ["AppKit", "ImageIO", "CryptoKit"]),
+    "piko": (["PikoProtocol.swift"], ["Foundation", "CryptoKit", "Security"]),
+    "piko_link": (["PikoProtocol.swift", "PassportProtocol.swift", "PassportAnnouncement.swift", "AppPaths.swift", "PikoLink.swift"], ["Foundation", "Network", "AppKit", "CryptoKit", "Security"]),
+    "announcement": (["PassportAnnouncement.swift", "PassportProtocol.swift", "PikoProtocol.swift", "AppPaths.swift"], ["Foundation", "AppKit", "CryptoKit"]),
 }
 
 

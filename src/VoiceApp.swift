@@ -1,11 +1,6 @@
 import AppKit
 import Foundation
 
-enum StartupError: LocalizedError {
-    case failed(String)
-    var errorDescription: String? { if case .failed(let message) = self { return message }; return nil }
-}
-
 enum LoginStartup {
     static let label = "local.rico.CodexVoice.login"
     static var domain: String { "gui/\(getuid())" }

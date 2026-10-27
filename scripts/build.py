@@ -91,11 +91,47 @@ def embed_runtime(expanded, framework):
     return binaries
 
 
-def compile_universal(build, target, sources, frameworks):
+def fetch_pinned(entry, target):
+    if target.exists() and hashlib.sha256(target.read_bytes()).hexdigest() == entry["sha256"]:
+        return target
+    temporary = target.with_name(target.name + ".part")
+    with urllib.request.urlopen(entry["url"], timeout=300) as source, temporary.open("wb") as output:
+        shutil.copyfileobj(source, output)
+    if hashlib.sha256(temporary.read_bytes()).hexdigest() != entry["sha256"]:
+        raise RuntimeError("Checksum mismatch for " + entry["url"])
+    temporary.replace(target)
+    return target
+
+
+def acquire_sherpa(cache):
+    """Fetch the pinned sherpa-onnx libraries, C header and Paraformer model."""
+    spec = json.loads((ROOT/"scripts/sherpa-runtime.json").read_text())
+    root = cache/"sherpa"; root.mkdir(parents=True, exist_ok=True)
+    include = root/"include"; (include/"sherpa-onnx/c-api").mkdir(parents=True, exist_ok=True)
+    fetch_pinned(spec["header"], include/"sherpa-onnx/c-api/c-api.h")
+    (include/"module.modulemap").write_text("module SherpaOnnxC {\n    header \"sherpa-onnx/c-api/c-api.h\"\n    export *\n}\n")
+    libs = root/"libs"
+    if not libs.is_dir():
+        entry = spec["libs"]
+        run("/usr/bin/tar", "-xjf", fetch_pinned(entry, root/entry["name"]), "-C", root)
+        shutil.move(str(root/entry["directory"]/"lib"), str(libs))
+        shutil.rmtree(root/entry["directory"])
+    model = root/"model"
+    if not (model/"model.int8.onnx").is_file():
+        entry = spec["model"]
+        run("/usr/bin/tar", "-xjf", fetch_pinned(entry, root/entry["name"]), "-C", root)
+        model.mkdir(parents=True, exist_ok=True)
+        for name in entry["files"]:
+            shutil.move(str(root/entry["directory"]/name), str(model/name))
+        shutil.rmtree(root/entry["directory"])
+    return {"include": include, "libs": libs, "model": model, "modelFiles": spec["model"]["files"]}
+
+
+def compile_universal(build, target, sources, frameworks, extra=()):
     slices = []
     for arch in ["arm64", "x86_64"]:
         output = build/(target.name+"-"+arch)
-        run("/usr/bin/xcrun", "swiftc", "-O", "-debug-prefix-map", str(ROOT)+"=/CodexVoice", "-file-prefix-map", str(ROOT)+"=/CodexVoice", "-module-cache-path", build/"swift-cache", "-target", arch+"-apple-macos13.0", *sources, "-o", output, *sum((["-framework", name] for name in frameworks), []))
+        run("/usr/bin/xcrun", "swiftc", "-O", "-debug-prefix-map", str(ROOT)+"=/CodexVoice", "-file-prefix-map", str(ROOT)+"=/CodexVoice", "-module-cache-path", build/"swift-cache", "-target", arch+"-apple-macos13.0", *sources, "-o", output, *sum((["-framework", name] for name in frameworks), []), *extra)
         slices.append(output)
     run("/usr/bin/lipo", "-create", *slices, "-output", target)
 
@@ -144,12 +180,22 @@ def main():
                     CFBundleIdentifier="local.rico.CodexVoice.Passport", CFBundleVersion="30")
     (app/"Contents/Info.plist").write_bytes(plistlib.dumps(info))
     info["NSBluetoothAlwaysUsageDescription"] = "连接你的 AI Passport 工牌，同步任务状态、播放提醒并接收按键操作。"
+    info["NSLocalNetworkUsageDescription"] = "在同一局域网内接收 Piko 固件工牌的语音听写。"
     (app/"Contents/Info.plist").write_bytes(plistlib.dumps(info))
-    for name in ["voice_engine.py", "passport_output.py", "accessory_settings.py", "pet_source.py", "speech_settings.py", "codex_usage.py", "reminder_rules.py", "reminder_recovery.py", "voice_bridge.py", "hook_setup.py", "runtime_info.py"]:
+    for name in ["voice_engine.py", "passport_output.py", "accessory_settings.py", "pet_source.py", "speech_settings.py", "codex_usage.py", "reminder_rules.py", "reminder_recovery.py", "voice_bridge.py", "hook_setup.py", "opencode_setup.py", "opencode_plugin.js", "runtime_info.py"]:
         shutil.copy2(ROOT/"src"/name, resources/name)
     shutil.copy2(ROOT/"assets/passport/ai-passport-front.png",resources/"AIPassport.png")
     shutil.copy2(ROOT/"assets/passport/nomi-idle.png",resources/"PetNOMI.png")
-    compile_universal(build, app/"Contents/MacOS/CodexVoice", [ROOT/"src"/name for name in ["VoiceApp.swift","AppPaths.swift","VoiceAppRuntime.swift","VoicePanel.swift","SpeechSettingsView.swift","PanelChrome.swift","UsageView.swift","UsageGauge.swift","SubscriptionLinkView.swift","ReminderSettingsView.swift","ServiceRecovery.swift","PassportProtocol.swift","PassportLink.swift","PassportAudio.swift","PassportSpeech.swift","PassportDictation.swift","PassportInput.swift","PassportSettingsView.swift","PassportPetAsset.swift","PassportPetSync.swift"]], ["AppKit","SwiftUI","CoreBluetooth","CryptoKit","Speech","AVFoundation","ApplicationServices","ImageIO"])
+    sherpa = acquire_sherpa(args.cache.resolve())
+    sherpa_dylibs = []
+    for dylib in sorted(sherpa["libs"].glob("*.dylib")):
+        target = app/"Contents/Frameworks"/dylib.name
+        shutil.copy2(dylib, target)
+        sherpa_dylibs.append(target)
+    sherpa_model = resources/"sherpa/paraformer"; sherpa_model.mkdir(parents=True)
+    for name in sherpa["modelFiles"]:
+        shutil.copy2(sherpa["model"]/name, sherpa_model/name)
+    compile_universal(build, app/"Contents/MacOS/CodexVoice", [ROOT/"src"/name for name in ["VoiceApp.swift","AppPaths.swift","VoiceAppRuntime.swift","VoicePanel.swift","SpeechSettingsView.swift","PanelChrome.swift","UsageView.swift","UsageGauge.swift","ReminderSettingsView.swift","ServiceRecovery.swift","PassportProtocol.swift","PassportAnnouncement.swift","PikoProtocol.swift","PikoLink.swift","PassportLink.swift","PassportAudio.swift","PassportSpeech.swift","PassportSherpa.swift","PassportDictation.swift","PassportInput.swift","PassportSettingsView.swift","PassportPetAsset.swift","PassportPetSync.swift"]], ["AppKit","SwiftUI","CoreBluetooth","CryptoKit","Speech","AVFoundation","ApplicationServices","ImageIO","Network"], extra=["-I", str(sherpa["include"]), "-L", str(sherpa["libs"]), "-lsherpa-onnx-c-api", "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
     compile_universal(build, resources/"AudioDeviceInfo", [ROOT/"src/AudioDeviceInfo.swift"], ["CoreAudio"])
     expanded = acquire_runtime(args.cache.resolve())
     binaries = embed_runtime(expanded, app/"Contents/Frameworks/Python.framework")
@@ -158,7 +204,7 @@ def main():
     run("/usr/bin/xcrun", "swiftc", "-module-cache-path", build/"swift-cache", "-target", platform.machine()+"-apple-macos13.0", ROOT/"scripts/IconGenerator.swift", "-o", build/"IconGenerator", "-framework", "AppKit")
     run(build/"IconGenerator", iconset)
     run("/usr/bin/iconutil", "-c", "icns", iconset, "-o", resources/"AppIcon.icns")
-    for binary in binaries + [resources/"AudioDeviceInfo", app/"Contents/MacOS/CodexVoice"]:
+    for binary in binaries + sherpa_dylibs + [resources/"AudioDeviceInfo", app/"Contents/MacOS/CodexVoice"]:
         run("/usr/bin/codesign", "--force", "--sign", args.identity, binary)
     nested_bundles = list((app/"Contents/Frameworks").rglob("*.app")) + list((app/"Contents/Frameworks").rglob("*.framework"))
     for nested in sorted(nested_bundles, key=lambda p: len(p.parts), reverse=True):

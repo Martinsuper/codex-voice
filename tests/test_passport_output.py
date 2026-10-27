@@ -56,6 +56,50 @@ class PassportTests(unittest.TestCase):
         device.feedback({"kind": "link", "connected": False})
         self.assertFalse(device.busy())
 
+
+    def piko_output(self, response=None):
+        sent = []
+        device = PassportOutput(timeout=.03)
+        def emit(event):
+            sent.append(event)
+            if event["op"] == "play" and response:
+                device.feedback({"kind": "audio", "id": event["id"], "phase": response})
+        device.emit = emit
+        device.feedback({"kind": "piko", "connected": True})
+        return device, sent
+
+    def test_piko_connection_enables_playback_with_transport(self):
+        device, sent = self.piko_output("started")
+        self.assertTrue(device.route() == "piko")
+        self.assertTrue(device.speak("a", "question"))
+        self.assertEqual(sent[0]["transport"], "piko")
+        device.feedback({"kind": "audio", "id": sent[0]["id"], "phase": "done"})
+        self.assertFalse(device.busy())
+
+    def test_ble_connection_wins_when_both_links_are_live(self):
+        device, sent = self.piko_output("started")
+        device.feedback({"kind": "link", "connected": True})
+        self.assertEqual(device.route(), "ble")
+        self.assertTrue(device.speak("a", "result"))
+        self.assertEqual(sent[0]["transport"], "ble")
+
+    def test_piko_disconnect_fails_the_running_play(self):
+        device, sent = self.piko_output()
+        device.emit = lambda event: device.feedback(
+            {"kind": "audio", "id": event["id"], "phase": "started"}
+        ) if event.get("transport") == "piko" else None
+        self.assertTrue(device.speak("a", "result"))
+        self.assertTrue(device.busy())
+        device.feedback({"kind": "piko", "connected": False})
+        self.assertFalse(device.busy())
+        self.assertFalse(device.speak("a", "result"))
+
+    def test_muted_volume_only_gates_the_ble_route(self):
+        device, sent = self.piko_output("started")
+        device.feedback({"kind": "link", "connected": True, "volume": 0})
+        self.assertTrue(device.speak("a", "result"))
+        self.assertEqual(sent[0]["transport"], "piko")
+
     def test_engine_retains_alert_and_counter_until_device_starts(self):
         speaker = Speaker(device_uid=PASSPORT_UID, voice_provider=lambda: [])
         speaker.passport, sent = self.output("failed")

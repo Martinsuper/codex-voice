@@ -165,8 +165,18 @@ def main():
         run([executable,'--hook','--state-dir',runtime],environment,input=payload)
         events=list((runtime/'inbox').glob('*.json'));assert len(events)==1
         event=json.loads(events[0].read_text());assert event['event']['tool_name']=='request_user_input'
+        opencode_setup=moved/'Contents/Resources/opencode_setup.py'
+        assert opencode_setup.is_file() and (moved/'Contents/Resources/opencode_plugin.js').is_file(),'OpenCode companion scripts must ship in Resources'
+        opencode_config=base/'opencode-profile'
+        result=json.loads(run([python,opencode_setup,'--install','--config-dir',opencode_config,'--state-dir',runtime,'--plugin-source',moved/'Contents/Resources/opencode_plugin.js'],child))
+        assert result['configured'],result
+        rendered=(opencode_config/'plugins/codex-voice/tui.js').read_text()
+        assert '__CODEX_VOICE_STATE_DIR__' not in rendered and 'codex-voice-opencode-v1' in rendered
+        assert json.loads(run([python,opencode_setup,'--install','--config-dir',opencode_config,'--state-dir',runtime,'--plugin-source',moved/'Contents/Resources/opencode_plugin.js'],child))['configured']
+        assert json.loads((opencode_config/'cli.json').read_text()),'Reinstall must keep cli.json a valid object'
+        assert json.loads(run([python,opencode_setup,'--remove','--config-dir',opencode_config,'--state-dir',runtime,'--plugin-source',moved/'Contents/Resources/opencode_plugin.js'],child))['removed']
         verify_speech_preferences(python, moved/'Contents/Resources', runtime, codex, child)
-        print(json.dumps({'relocation':True,'cleanPath':True,'embeddedPython':info['pythonVersion'],'universalBinaries':True,'deepSignatureValid':True,'isolatedHookInstall':True,'hookTrustUnchanged':True,'bundledHookEntry':True,'speechPreferencesPersistAndRestart':True,'invalidSpeechSettingsRejected':True,'pauseDurationPersistsAndRestarts':True,'invalidPauseDurationRejected':True,'usageResetPreferencePersistsAndRestarts':True,'invalidUsageResetSettingRejected':True,'lowUsagePreferencesPersistAndRestart':True,'invalidLowUsageThresholdRejected':True,'reminderRulesPersistAndRestart':True,'quietHoursPersistAndRestart':True}))
+        print(json.dumps({'relocation':True,'cleanPath':True,'embeddedPython':info['pythonVersion'],'universalBinaries':True,'deepSignatureValid':True,'isolatedHookInstall':True,'hookTrustUnchanged':True,'bundledHookEntry':True,'opencodeInstallIdempotent':True,'speechPreferencesPersistAndRestart':True,'invalidSpeechSettingsRejected':True,'pauseDurationPersistsAndRestarts':True,'invalidPauseDurationRejected':True,'usageResetPreferencePersistsAndRestarts':True,'invalidUsageResetSettingRejected':True,'lowUsagePreferencesPersistAndRestart':True,'invalidLowUsageThresholdRejected':True,'reminderRulesPersistAndRestart':True,'quietHoursPersistAndRestart':True}))
 
 
 if __name__=='__main__':main()

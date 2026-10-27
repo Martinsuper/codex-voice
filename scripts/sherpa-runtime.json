@@ -1,0 +1,20 @@
+{
+  "header": {
+    "url": "https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v2.0.0/sherpa-onnx/c-api/c-api.h",
+    "name": "c-api.h",
+    "sha256": "9764470f09d219d6e7a80c6950059502c900ef82691ed6bea260d8ce9518f78a"
+  },
+  "libs": {
+    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.0/sherpa-onnx-v2.0.0-osx-universal2-shared-no-tts-lib.tar.bz2",
+    "name": "sherpa-onnx-v2.0.0-osx-universal2-shared-no-tts-lib.tar.bz2",
+    "sha256": "30be0a78492496389f80b7ca2356ac0de71653280d5a9b536e5714afd61177c4",
+    "directory": "sherpa-onnx-v2.0.0-osx-universal2-shared-no-tts-lib"
+  },
+  "model": {
+    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-paraformer-zh-2023-09-14.tar.bz2",
+    "name": "sherpa-onnx-paraformer-zh-2023-09-14.tar.bz2",
+    "sha256": "9c49fd9c6fb63de8e18c1054cf3d100f804741b7e608e187923cd8ff09fa9f03",
+    "directory": "sherpa-onnx-paraformer-zh-2023-09-14",
+    "files": ["model.int8.onnx", "tokens.txt"]
+  }
+}

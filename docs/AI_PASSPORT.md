@@ -1,6 +1,6 @@
 # AI Passport：从拿到硬件到连上 Codex
 
-[返回项目首页](../README.md) · [下载本版全部文件](https://github.com/superslash-rico/codex-voice/releases/tag/v0.9.1-beta.1) · [固件源码](../firmware/ai-passport/)
+[返回项目首页](../README.md) · [下载本版全部文件](https://github.com/Martinsuper/codex-voice/releases/tag/v0.9.1-beta.1) · [固件源码](../firmware/ai-passport/)
 
 这份指南面向第一次刷固件的用户。没有工牌时只安装 Mac 工具即可；本版的电脑端和工牌配件已整合为一个软件。
 
@@ -10,10 +10,10 @@
 | --- | --- |
 | 工牌 | FoloToy **AI Passport**，ESP32-C3、8 MB Flash、无 PSRAM，原板载显示/麦克风/扬声器/三按键 |
 | USB | 能传数据的线；只充电的线不能刷机 |
-| Mac | 普通提醒及同步 macOS 13+；按住听写 macOS 26+ |
+| Mac | 普通提醒、同步与按住听写 macOS 13+ |
 | 蓝牙 | Mac 蓝牙开启；工牌在附近；首次测试只开启一张工牌 |
 | 电脑软件 | 本项目的 Codex 语音提醒；需要任务提醒时另安装支持 Hooks 的本地 Codex |
-| 听写模型 | 简体中文 Apple 本机语音模型，当前不提供其他语言选择 |
+| 听写模型 | 应用内置的简体中文 Paraformer 模型（sherpa-onnx 本机识别），当前不提供其他语言选择；内置模型缺失时回退 macOS 26 系统听写 |
 
 <p align="center"><img src="../assets/passport/ai-passport-front.png" width="160" alt="本指南支持的 FoloToy AI Passport 实物"></p>
 
@@ -23,7 +23,7 @@
 
 ### 第一步：下载并校验
 
-从同一 [Release](https://github.com/superslash-rico/codex-voice/releases/tag/v0.9.1-beta.1) 下载：
+从同一 [Release](https://github.com/Martinsuper/codex-voice/releases/tag/v0.9.1-beta.1) 下载：
 
 - `AI-Passport-Codex-0.3.0-pets-full.bin`：刷写用的完整镜像。
 - `AI-Passport-Codex-0.3.0-pets.zip`：包含相同完整镜像、分段文件、分区信息、刷写说明及校验值的固件包。
@@ -95,7 +95,7 @@ python -m esptool --chip esp32c3 --port /dev/cu.usbmodemXXXX --baud 460800 write
 手动构建也可以。克隆仓库后在固件目录操作；ESP-IDF 的安装说明见 [环境准备](../firmware/ai-passport/docs/development/engineering/environment-setup.md)：
 
 ```sh
-git clone https://github.com/superslash-rico/codex-voice.git
+git clone https://github.com/Martinsuper/codex-voice.git
 cd codex-voice/firmware/ai-passport
 # 先安装/激活 ESP-IDF v5.5.3，下面路径换成你自己的安装目录。
 source /path/to/esp-idf-v5.5.3/export.sh
@@ -110,6 +110,17 @@ python3 tools/archive_firmware.py verify build/firmware/<完整镜像的SHA256>
 ```
 
 `idf.py build` 是增量编译，不替代完整合并镜像验证。编译通过不等于工牌实测通过。构建命令不会自动刷机；确认后可按路线 A 刷入自己的完整镜像。
+
+## 路线 C：使用 Piko 固件（Wi-Fi 直连听写）
+
+同一块 AI Passport 也可以刷第三方 **Piko Passport 固件**。该固件走 Wi-Fi：Mac 作为服务端监听 **TCP 19388 + UDP 19389**（端口写死在固件里），工牌主动连接；语音上行是本机转写前的原始录音。与蓝牙固件相比，**宠物屏保、任务卡片、额度显示和工牌播报不可用**，只保留按住听写（外加固件自带的日历、时钟、BLE 翻页器等独立功能）。
+
+1. 按 Piko 固件仓库的说明刷写并配网（工牌热点 `Piko-Setup-xxxxxx` → `http://192.168.4.1` 填 Wi-Fi 与电脑局域网 IP）。
+2. Mac 工具进入 **AI Passport**，确认 **启用 AI Passport** 已打开。工具会自动监听端口；首次运行允许 macOS 的"本地网络"权限并放行防火墙入站。
+3. 工牌上发起配对后会自动完成配对并保存重连令牌；也可以在 **Wi-Fi 工牌（Piko 固件）** 一栏点 **配对** 生成 8 位配对码（5 分钟有效），填入工牌配网页。换工牌或重配前先 **解绑**。
+4. 长按工牌确认键讲话、松手处理。文字写入电脑输入框，转写预览会显示在工牌屏幕；不播提示音，以屏幕状态为准。
+
+Piko 路径的限制：同一局域网且明文传输（仅适合可信家庭/开发网络）；录音单段最长 60 秒；需要电脑与工牌同网段。没有真机时可先用 `python3 scripts/piko_mock_client.py` 在本机模拟一台设备验证听写链路。蓝牙固件与 Piko 固件随时可互相刷回，设置开关是同一个。
 
 ## 安装 Mac 工具并首次配对
 
@@ -156,15 +167,17 @@ python3 tools/archive_firmware.py verify build/firmware/<完整镜像的SHA256>
 
 ## 按住讲话，文字进入电脑
 
-1. 确认 **macOS 26+**。在系统启用简体中文听写/相应本机语音资源；模型可用性以本机为准，首次安装可能联网下载。
-2. 在 **AI Passport → 按住听写 → 设置 → 检查本机中文模型** 中确认“已就绪”。
+1. 确认 **macOS 13+**。识别模型已随应用内置，无需在系统中额外下载语音资源；若应用不完整导致内置模型缺失，macOS 26+ 会回退到系统听写模型。
+2. 在 **AI Passport → 按住听写 → 设置 → 检查识别引擎** 中确认“已就绪”。
 3. 点击 **开启辅助功能权限**，在系统“设备控制和数据访问”（部分系统称“辅助功能”）中为 **Codex 语音提醒** 开启权限。密码或触控 ID 只在系统窗口中完成。
 4. 收起工具，手动点击 Codex 或其他应用的普通输入框，让光标出现。
 5. 长按工牌确认键，等**开始单音结束**再讲话，讲话时一直按住。
 6. 松开，屏幕显示处理状态；**上扬双音**表示文字已写入原输入框，不代表消息已发出。
 7. 检查文字，自己点击发送。
 
-一次处理一段，最长约 30 秒。识别只用 Mac 本地 Apple SpeechAnalyzer/SpeechTranscriber，不走云端转写，不保存录音文件。工牌麦克风通过 BLE 发音频，不是普通蓝牙耳机输入设备。
+使用 Piko（Wi-Fi）固件时没有开始/完成提示音：按下即录音，松手处理，进度显示在工牌屏幕与电脑上。
+
+一次处理一段：蓝牙固件最长约 30 秒，Piko 固件最长 60 秒。识别只用 Mac 本机的 sherpa-onnx + Paraformer 引擎（内置模型不可用时回退 Apple SpeechAnalyzer），不走云端转写，不保存录音文件。蓝牙固件的工牌麦克风通过 BLE 发音频；Piko 固件经局域网 WebSocket 发送。
 
 未识别、传输不完整、权限不足或目标焦点改变时，不响普通成功双音。已识别但未能确认落字的文字保留在**当前应用进程内**，可从 **查看保留的听写文字** 手动复制；成功时不自动弹出保留面板。退出前复制需要保留的文字。某些应用不暴露可编辑输入框、安全输入框或特殊编辑器可能不兼容。
 
@@ -179,6 +192,7 @@ python3 tools/archive_firmware.py verify build/firmware/<完整镜像的SHA256>
 | 语音有识别但不落字 | 检查焦点和输入权限；临时签名升级后重新添加本应用授权；先用普通文稿输入框测试 |
 | 没有开始音 | 看工牌“准备中/失败”文字；模型、权限或连接不满足时不会伪装成可以讲话 |
 | 没有完成音 | 看是否识别失败、目标改变或文字待保留；电脑收到音频不等于落字成功 |
+| Piko 工牌连不上 | 确认同一 Wi-Fi 网段、应用已启用 AI Passport；macOS「本地网络」权限与防火墙入站（TCP 19388/UDP 19389）是否放行；换网络后重新配对或在工牌配网页改电脑 IP |
 
 完成后自己逐项确认：新界面可读 → 配对连接 → 电脑/工牌声音可独立控制 → 实际任务接手 → 用量可读 → 更换 Codex 宠物后屏保自动变更 → 昵称正确 → 听写落字、不自动发送、两个音效正常 → 重启应用后设置和重连恢复。
 

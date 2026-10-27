@@ -78,10 +78,8 @@ struct CodexUsage {
 struct UsageSummaryRow: View {
     @ObservedObject var model:VoicePanelModel
     var body:some View {
-        VStack(spacing:12) {
-            UsageOverviewCard(model:model,compact:true)
-            SubscriptionServiceLink()
-        }.padding(.horizontal,18).padding(.bottom,12)
+        UsageOverviewCard(model:model,compact:true)
+            .padding(.horizontal,18).padding(.bottom,12)
     }
 }
 
@@ -188,7 +186,6 @@ struct UsageDetailView: View {
                 Spacer(minLength:0)
             }.padding(.bottom,8)
             Text(usage.updateNote).font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary).padding(.top, 5).padding(.bottom, 17)
-            SubscriptionServiceLink().padding(.bottom, 16)
             if !usage.windows.isEmpty {
                 VStack(spacing: 14) {
                     ForEach(usage.windows) { window in

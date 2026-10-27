@@ -24,6 +24,11 @@ final class PassportDictation: NSObject {
     private var retainedCopied = false
     private var setupWindow: NSWindow?
     private var setupNote: NSTextField?
+    // Piko (Wi-Fi firmware) transport: raw PCM streams in while the key is held.
+    var pikoSend: ([String: Any]) -> Void = { _ in }
+    private var pcmData = Data()
+    private var pikoEnded = false
+    private var pikoCaptureError = ""
 
     override init() {
         super.init()
@@ -65,7 +70,6 @@ final class PassportDictation: NSObject {
         }
     }
     private func begin(_ id: String) {
-        guard #available(macOS 26, *) else { reply("voice_ready",id:id,ok:false,message:"需要 macOS 26 或更新版本"); return }
         guard AXIsProcessTrusted(), CGPreflightPostEventAccess() else {
             reply("voice_ready",id:id,ok:false,message:"请在电脑开启辅助功能权限"); return
         }
@@ -80,7 +84,7 @@ final class PassportDictation: NSObject {
         deadline = Timer.scheduledTimer(withTimeInterval:75,repeats:false) { [weak self] _ in self?.fail("听写超时，请重试") }
         preparation = Task { @MainActor [weak self] in
             do {
-                let prepared = try await PassportSpeechSession.prepare()
+                let prepared = try await PassportRecognition.prepare()
                 guard let self, self.activeID == id, !Task.isCancelled else { await prepared.cancel(); return }
                 self.speech = prepared
                 guard target.unchanged(generation:self.generation) else {
@@ -89,7 +93,7 @@ final class PassportDictation: NSObject {
                 self.reply("voice_ready",id:id,ok:true)
             } catch {
                 guard let self, self.activeID == id else { return }
-                self.reply("voice_ready",id:id,ok:false,message:"本机语音识别暂不可用")
+                self.reply("voice_ready",id:id,ok:false,message:(error as? LocalizedError)?.errorDescription ?? "本机语音识别暂不可用")
                 self.setupNote?.stringValue = error.localizedDescription; self.reset()
             }
         }
@@ -106,7 +110,7 @@ final class PassportDictation: NSObject {
               stream.buffer.isEmpty, let id = activeID else { return }
         do {
             let pcm = try recording.finish(frames:frames,samples:samples)
-            guard #available(macOS 26, *), let speech = speech as? PassportSpeechSession else { throw PassportSpeechError.unavailable }
+            guard let speech = speech as? PassportRecognition else { throw PassportSpeechError.unavailable }
             attempting = true
             work = Task { @MainActor [weak self] in
                 do {
@@ -126,7 +130,7 @@ final class PassportDictation: NSObject {
                     self.reset()
                 } catch {
                     guard let self, self.activeID == id else { return }
-                    self.fail("没有识别成功，请靠近麦克风重试")
+                    self.fail((error as? LocalizedError)?.errorDescription ?? "没有识别成功，请靠近工牌重试")
                 }
             }
         } catch { fail("没有听清，请靠近麦克风重试") }
@@ -135,11 +139,132 @@ final class PassportDictation: NSObject {
         guard let id = activeID else { return }
         reply("voice_result",id:id,ok:false,message:message); reset()
     }
+    /// The device records before the desktop is ready: capture the focused
+    /// field in parallel with the upload and only report failures at the end.
+    var pikoSink: PikoVoiceSink {
+        PikoVoiceSink(
+            start: { [weak self] id, rate, channels, format in self?.pikoStart(id, rate, channels, format) },
+            audio: { [weak self] data in self?.pikoAudio(data) },
+            end: { [weak self] id in self?.pikoEnd(id) },
+            cancel: { [weak self] id in self?.pikoCancel(id) },
+            fail: { [weak self] id, message in self?.pikoFail(id, message) })
+    }
+    private func pikoStart(_ id: String, _ sampleRate: Int, _ channels: Int, _ format: String) {
+        guard PassportPiko.validID(id) else { return }
+        guard sampleRate == 16000, channels == 1, format == "pcm_s16le" else {
+            pikoSend(PassportPiko.voiceError(id, "仅支持 16kHz 单声道语音")); return
+        }
+        if activeID != nil { pikoSend(PassportPiko.voiceError(id, "上一段听写仍在处理")); return }
+        guard retainedCopied || retainedCount < 50 else {
+            pikoSend(PassportPiko.voiceError(id, "请先处理电脑中保留的文字")); return
+        }
+        activeID = id
+        pcmData = Data(); pikoEnded = false; pikoCaptureError = ""
+        if !AXIsProcessTrusted() || !CGPreflightPostEventAccess() {
+            pikoCaptureError = "请在电脑开启辅助功能权限"
+        } else if let target = PassportInputTarget.capture(generation: generation) {
+            self.target = target
+        } else {
+            pikoCaptureError = "请先点选电脑上的输入框"
+        }
+        busyChanged(true)
+        deadline = Timer.scheduledTimer(withTimeInterval: 75, repeats: false) { [weak self] _ in
+            guard let self, self.activeID == id else { return }
+            self.pikoFail(id, "听写超时，请重试")
+        }
+        preparation = Task { @MainActor [weak self] in
+            do {
+                let prepared = try await PassportRecognition.prepare()
+                guard let self, self.activeID == id, !Task.isCancelled else { await prepared.cancel(); return }
+                self.speech = prepared
+            } catch {
+                guard let self, self.activeID == id, !Task.isCancelled else { return }
+                self.pikoFail(id, (error as? LocalizedError)?.errorDescription ?? "本机语音识别暂不可用")
+            }
+        }
+    }
+    private func pikoAudio(_ data: Data) {
+        guard activeID != nil, !attempting, !pikoEnded else { return }
+        guard pcmData.count + data.count <= PassportPiko.maxAudioBytes else {
+            if let id = activeID { pikoFail(id, "讲话太长，请分段重试") }
+            return
+        }
+        pcmData.append(data)
+    }
+    private func pikoEnd(_ id: String) {
+        guard activeID == id, !pikoEnded, !attempting else { return }
+        pikoEnded = true
+        deadline?.invalidate(); deadline = nil
+        guard let speech = speech as? PassportRecognition else {
+            // The engine is usually ready long before release; wait briefly for
+            // the preparation task instead of failing an otherwise good turn.
+            work = Task { @MainActor [weak self] in
+                let waited = Date().addingTimeInterval(10)
+                while self != nil, self?.activeID == id, self?.speech == nil, !Task.isCancelled, Date() < waited {
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+                guard let self, self.activeID == id, !Task.isCancelled else { return }
+                self.pikoFinalize(id)
+            }
+            return
+        }
+        pikoFinalize(id, engine: speech)
+    }
+    private func pikoFinalize(_ id: String, engine: PassportRecognition? = nil) {
+        guard !attempting, activeID == id else { return }
+        attempting = true
+        pikoSend(PassportPiko.voiceStatus(id, "transcribing"))
+        work = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                guard let engine = engine ?? self.speech as? PassportRecognition else { throw PassportSpeechError.unavailable }
+                let pcm = PassportPiko.pcmSamples(self.pcmData) ?? []
+                guard PassportPiko.validateUtterance(pcm) else { throw PassportSherpaError.empty }
+                let text = try await engine.transcribe(pcm)
+                guard self.activeID == id, !Task.isCancelled else { return }
+                if self.target == nil {
+                    let note = self.pikoCaptureError.isEmpty ? "请先点选电脑上的输入框" : self.pikoCaptureError
+                    self.retain(text, note: note + "。已保留本次文字，可手动复制。")
+                    self.pikoSend(PassportPiko.voiceStatus(id, "text_only", message: note + "，文字已保留在电脑"))
+                    self.reset(); return
+                }
+                guard self.target!.unchanged(generation: self.generation) else {
+                    self.retain(text, note: "输入框或光标已改变，原来的内容保持不变。")
+                    self.pikoSend(PassportPiko.voiceStatus(id, "text_only", message: "输入框已改变，文字保留在电脑"))
+                    self.reset(); return
+                }
+                let inserted = await self.target!.insert(text, generation: { self.generation }, diagnostic: self.inputDiagnostic)
+                guard self.activeID == id else { return }
+                if inserted {
+                    self.pikoSend(PassportPiko.voiceTranscript(id, text))
+                    self.pikoSend(PassportPiko.voiceStatus(id, "done"))
+                } else {
+                    self.retain(text, note: "无法确认输入结果，请检查输入框。下面保留了本次文字，可手动复制；不会自动重复输入。")
+                    self.pikoSend(PassportPiko.voiceStatus(id, "text_only", message: "请检查电脑，文字已保留"))
+                }
+                self.reset()
+            } catch {
+                guard self.activeID == id, !Task.isCancelled else { return }
+                self.pikoFail(id, (error as? LocalizedError)?.errorDescription ?? "没有识别成功，请靠近工牌重试")
+            }
+        }
+    }
+    private func pikoCancel(_ id: String) {
+        guard activeID == id else { return }
+        pikoSend(PassportPiko.voiceStatus(id, "cancelled"))
+        reset()
+    }
+    private func pikoFail(_ id: String, _ message: String) {
+        guard activeID == id else { return }
+        pikoSend(PassportPiko.voiceError(id, message))
+        reset()
+    }
     func reset() {
         activeID = nil; preparation?.cancel(); preparation = nil; work?.cancel(); work = nil
         deadline?.invalidate(); deadline = nil
-        if #available(macOS 26, *), let old = speech as? PassportSpeechSession { Task { await old.cancel() } }
+        if let old = speech as? PassportRecognition { Task { await old.cancel() } }
         speech = nil; target = nil; recording = nil; ended = nil; attempting = false; stream = PassportAudioStream()
+        pcmData = Data(); pikoEnded = false; pikoCaptureError = ""
         busyChanged(false)
     }
     @objc func showSetup() {
@@ -149,9 +274,9 @@ final class PassportDictation: NSObject {
             let title = NSTextField(labelWithString:"按住讲话，松开输入")
             title.font = .systemFont(ofSize:24,weight:.semibold); title.frame = NSRect(x:24,y:332,width:425,height:34)
             w.contentView?.addSubview(title)
-            let body = NSTextField(wrappingLabelWithString:"先点选 Codex 或其他应用的输入框，再长按工牌确认键。听到单音后讲话；松开停止。上扬双音表示文字已写入输入框，消息由你发送。\n\n音频只在本机识别，不上传，也不保存录音。需要 macOS 26 及已安装的中文语音模型。")
+            let body = NSTextField(wrappingLabelWithString:"先点选 Codex 或其他应用的输入框，再长按工牌确认键。听到单音后讲话；松开停止。上扬双音表示文字已写入输入框，消息由你发送。\n\n音频只在本机识别，不上传，也不保存录音。识别由应用内置的中文模型完成，无需联网。")
             body.frame = NSRect(x:24,y:190,width:420,height:134); body.font = .systemFont(ofSize:14); w.contentView?.addSubview(body)
-            let speechButton = NSButton(title:"检查本机中文模型",target:self,action:#selector(checkSpeech))
+            let speechButton = NSButton(title:"检查识别引擎",target:self,action:#selector(checkSpeech))
             speechButton.frame = NSRect(x:20,y:140,width:170,height:34); w.contentView?.addSubview(speechButton)
             let inputButton = NSButton(title:"开启辅助功能权限",target:self,action:#selector(authorizeInput))
             inputButton.frame = NSRect(x:200,y:140,width:235,height:34); w.contentView?.addSubview(inputButton)
@@ -166,12 +291,11 @@ final class PassportDictation: NSObject {
         setupWindow?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps:true)
     }
     @objc private func checkSpeech() {
-        setupNote?.stringValue = "正在检查已安装的本机中文模型…"
+        setupNote?.stringValue = "正在检查识别引擎…"
         Task { @MainActor [weak self] in
             do {
-                guard #available(macOS 26, *) else { throw PassportSpeechError.unavailable }
-                let session = try await PassportSpeechSession.prepare(); await session.cancel()
-                self?.setupNote?.stringValue = "本机中文模型已就绪 · 辅助功能：\(AXIsProcessTrusted() ? "已允许" : "待允许")"
+                let session = try await PassportRecognition.prepare(); await session.cancel()
+                self?.setupNote?.stringValue = "\(session.engineName)已就绪 · 辅助功能：\(AXIsProcessTrusted() ? "已允许" : "待允许")"
             } catch { self?.setupNote?.stringValue = error.localizedDescription }
         }
     }

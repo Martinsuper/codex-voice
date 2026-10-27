@@ -20,8 +20,8 @@ struct PassportAccessoryCard: View {
                 VStack(alignment:.leading,spacing:5) {
                     HStack(spacing:7) {
                         Text("AI Passport").font(VoiceTheme.font(13,medium:true))
-                        Circle().fill(model.passportConnected ? VoiceTheme.success : VoiceTheme.secondary.opacity(0.4)).frame(width:5,height:5)
-                        Text(model.passportConnected ? "已连接" : model.passportEnabled ? "未连接" : "可选配件")
+                        Circle().fill(model.passportAnyConnected ? VoiceTheme.success : VoiceTheme.secondary.opacity(0.4)).frame(width:5,height:5)
+                        Text(model.passportAnyConnected ? "已连接" : model.passportEnabled ? "未连接" : "可选配件")
                             .font(VoiceTheme.font(10)).foregroundColor(VoiceTheme.secondary)
                     }
                     Text(model.passportEnabled ? "\(model.passportPetName) · \(model.passportVoiceEnabled ? "播报已开启" : "仅同步屏幕")" : "把任务提醒带在身边")
@@ -33,7 +33,7 @@ struct PassportAccessoryCard: View {
             }.padding(.horizontal,14).padding(.vertical,10).frame(maxWidth:.infinity,alignment:.leading)
                 .background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius:15,style:.continuous))
                 .overlay(RoundedRectangle(cornerRadius:15,style:.continuous).stroke(VoiceTheme.line,lineWidth:0.6))
-        }.buttonStyle(.plain).accessibilityLabel("AI Passport 设置，\(model.passportConnected ? "已连接" : model.passportEnabled ? "等待连接" : "可选配件")")
+        }.buttonStyle(.plain).accessibilityLabel("AI Passport 设置，\(model.passportAnyConnected ? "已连接" : model.passportEnabled ? "等待连接" : "可选配件")")
             .padding(.horizontal,18).padding(.bottom,12)
     }
 }
@@ -65,20 +65,30 @@ struct PassportSettingsView: View {
                         VStack(alignment:.leading,spacing:5) {
                             Text("AI Passport").font(VoiceTheme.font(20,medium:true))
                             Text(model.passportPetName).font(VoiceTheme.font(13,medium:true)).foregroundColor(VoiceTheme.ink)
-                            Label(model.passportConnected ? "已连接" : model.passportEnabled ? "等待连接" : "可选配件",systemImage:model.passportConnected ? "checkmark.circle.fill":"antenna.radiowaves.left.and.right")
-                                .font(VoiceTheme.font(10,medium:true)).foregroundColor(model.passportConnected ? VoiceTheme.success:VoiceTheme.secondary)
+                            Label(model.passportAnyConnected ? "已连接" : model.passportEnabled ? "等待连接" : "可选配件",systemImage:model.passportAnyConnected ? "checkmark.circle.fill":"antenna.radiowaves.left.and.right")
+                                .font(VoiceTheme.font(10,medium:true)).foregroundColor(model.passportAnyConnected ? VoiceTheme.success:VoiceTheme.secondary)
                         }
                     }.frame(maxWidth:.infinity,alignment:.leading).padding(.vertical,4)
                     group {
-                        row("启用 AI Passport","同步任务、剩余额度和屏保，使用按住听写。") {
+                        row("启用 AI Passport","连接工牌（蓝牙或 Wi-Fi 固件）、同步任务，并使用按住听写。") {
                             Toggle("启用 AI Passport",isOn:Binding(get:{model.passportEnabled},set:{model.configurePassport(["enabled":$0])}))
                                 .toggleStyle(PersistentSwitchStyle()).labelsHidden().disabled(!model.connected)
                         }
                         if model.passportEnabled {
                             VoiceTheme.line.frame(height:1)
-                            row("连接状态",model.passportConnected ? "蓝牙已连接，信息会自动同步。" : model.passportLinkError) {
+                            row("蓝牙连接状态",model.passportConnected ? "蓝牙已连接，信息会自动同步。" : model.passportLinkError) {
                                 Image(systemName:model.passportConnected ? "checkmark.circle.fill" : "antenna.radiowaves.left.and.right")
                                     .foregroundColor(model.passportConnected ? VoiceTheme.success : VoiceTheme.secondary)
+                            }
+                            VoiceTheme.line.frame(height:1)
+                            row("Wi-Fi 工牌（Piko 固件）",model.pikoSummary) {
+                                if model.pikoConnected {
+                                    Image(systemName:"checkmark.circle.fill").foregroundColor(VoiceTheme.success)
+                                } else if model.pikoPaired {
+                                    Button("解绑") { model.forgetPiko() }.buttonStyle(PanelButtonStyle())
+                                } else {
+                                    Button("配对") { model.beginPikoPairing() }.buttonStyle(PanelButtonStyle())
+                                }
                             }
                         }
                     }
@@ -142,7 +152,10 @@ struct PassportSettingsView: View {
                         Text("固件 \(model.passportFirmware)").font(VoiceTheme.font(10)).foregroundColor(VoiceTheme.secondary)
                     }
                 }.padding(.horizontal,20).padding(.bottom,20)
-            }.frame(maxHeight:model.maximumSettingsHeight)
+            }.scrollIndicators(.visible).frame(maxHeight:model.maximumSettingsHeight)
+            Text("向下滚动查看试听与屏保设置")
+                .font(VoiceTheme.font(10)).foregroundColor(VoiceTheme.secondary)
+                .padding(.horizontal,20).padding(.vertical,8)
         }.onAppear {model.passportPetNameDraft=model.passportPetName;model.passportPetNameDraftBaseline=model.passportPetName}
             .onChange(of:model.passportPetName) {name in
                 if model.passportPetNameDraft==model.passportPetNameDraftBaseline {model.passportPetNameDraft=name}

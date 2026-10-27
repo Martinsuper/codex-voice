@@ -35,6 +35,9 @@ USAGE_LOW_ID = "usage-low:"
 USAGE_LOW_PREVIEW_ID = USAGE_LOW_ID + "preview"
 DEFAULT_PAUSE_MINUTES = 15
 KINDS = {"approval": "等待审批", "question": "等待回答", "result": "已有结果", "blocked": "需要关注", "test": "播报测试"}
+AGENT_SOURCES = {"opencode"}
+AGENT_ACTIONS = {"add", "resolve", "resolve_request", "resolve_thread"}
+AGENT_KINDS = {"approval", "question", "result", "blocked"}
 VERSION = "0.9.1-beta.1"
 
 
@@ -307,7 +310,7 @@ class Engine:
         self.seen = collections.OrderedDict()
         self.muted_until = 0.0
         self.last_spoken = 0.0
-        self.monitor = {"state": "starting", "detail": "正在连接本地事件", "files": 0, "lastEventAt": None, "hookLastSeen": None}
+        self.monitor = {"state": "starting", "detail": "正在连接本地事件", "files": 0, "lastEventAt": None, "hookLastSeen": None, "agentLastSeen": None}
         self.history = collections.deque(maxlen=40)
         self.speech = SpeechSettings.load(speech_settings)
         self.speaker.speech = self.speech
@@ -897,7 +900,12 @@ class RolloutAdapter:
                 self.recovery_live_threads.add(thread)
             self.engine.monitor.update(state="connected", detail="本地事件记录已连接", files=len(self.positions))
         except (sqlite3.Error, OSError, ValueError):
-            self.engine.monitor.update(state="unavailable", detail="本地事件暂不可用；手动确认仍可使用")
+            # A machine running only OpenCode never has a Codex state database;
+            # once its plugin has delivered an event, keep reporting connected.
+            if self.engine.monitor.get("agentLastSeen") is not None:
+                self.engine.monitor.update(state="connected", detail="OpenCode 插件已连接；Codex 本地事件暂不可用")
+            else:
+                self.engine.monitor.update(state="unavailable", detail="本地事件暂不可用；手动确认仍可使用")
 
     def poll(self):
         self.discover()
@@ -998,6 +1006,33 @@ class RolloutAdapter:
         elif payload.get("type") == "function_call_output" and payload.get("call_id") in self.calls:
             # Async question tools returning immediately are NOT an answer.
             pass
+
+
+def handle_agent(raw, engine):
+    """Sanitized notifications from OpenCode CLI plugins; observational only."""
+    action = raw.get("action")
+    source = str(raw.get("source", ""))
+    if action not in AGENT_ACTIONS or source not in AGENT_SOURCES:
+        return
+    engine.monitor["agentLastSeen"] = engine.now()
+    thread = str(raw.get("thread", ""))
+    if action == "add":
+        kind = raw.get("kind", "result")
+        identifier = raw.get("id")
+        if kind not in AGENT_KINDS or not isinstance(identifier, str) or not identifier:
+            return
+        try:
+            delay = float(raw.get("delay", 0))
+        except (TypeError, ValueError):
+            delay = 0
+        engine.add({"id": identifier, "thread": thread, "turn": str(raw.get("turn", "")), "requestId": str(raw.get("requestId", "")), "kind": kind, "title": raw.get("title", ""), "detail": str(raw.get("detail", ""))[:150], "delay": max(0, delay), "source": source})
+    elif action == "resolve":
+        if isinstance(raw.get("id"), str):
+            engine.event({"action": "resolve", "id": raw["id"]})
+    elif action == "resolve_request":
+        engine.event({"action": "resolve_request", "thread": thread, "requestId": str(raw.get("requestId", ""))})
+    elif action == "resolve_thread":
+        engine.event({"action": "resolve_thread", "thread": thread, "reason": str(raw.get("reason", "任务已继续"))[:80]})
 
 
 def handle_hook(raw, engine, adapter):
@@ -1158,6 +1193,9 @@ def main():
                         if event.get("action") == "hook":
                             if isinstance(event.get("event"), dict):
                                 handle_hook(event["event"], engine, adapter)
+                        elif event.get("action") == "agent":
+                            if isinstance(event.get("event"), dict):
+                                handle_agent(event["event"], engine)
                         else:
                             dispatch(event)
                         store.save(engine, adapter, force=True)

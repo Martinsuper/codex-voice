@@ -90,10 +90,13 @@ final class VoicePanelModel: ObservableObject {
     @Published var devicePickerOpen = false
     @Published var connectionConfigured = false
     @Published var connectionMessage = "正在检查连接"
+    @Published var opencodeConfigured = false
+    @Published var opencodeMessage = "正在检查连接"
     @Published var startupEnabled = false
     @Published var serviceError: String?
     @Published var serviceRecovering = false
     @Published var recentTitle: String?
+    @Published var pikoState: [String: Any] = [:]
     @Published var listContentHeight: CGFloat = 160
     @Published var maximumListHeight: CGFloat = 380
     @Published var maximumSettingsHeight: CGFloat = 540
@@ -103,7 +106,10 @@ final class VoicePanelModel: ObservableObject {
     var hide: () -> Void = {}
     var retry: () -> Void = {}
     var connectCodex: () -> Void = {}
+    var connectOpencode: () -> Void = {}
     var setupPassport: () -> Void = {}
+    var beginPikoPairing: () -> Void = {}
+    var forgetPiko: () -> Void = {}
 
     var alerts: [VoiceAlert] {
         let items = (snapshot["alerts"] as? [[String: Any]] ?? []).compactMap(VoiceAlert.init)
@@ -129,10 +135,31 @@ final class VoicePanelModel: ObservableObject {
     var petPreview:NSImage? {NSImage(contentsOf:AppPaths.runtime.appendingPathComponent("pet-cache/preview.png"))}
     var passportLinkError: String {(passport["error"] as? String).flatMap {$0.isEmpty ? nil : $0} ?? "确认工牌已开机、在 Mac 附近；恢复后会自动连接。"}
     var passportSettingsError: String {passport["settingsError"] as? String ?? ""}
+    var pikoConnected: Bool {passportEnabled && (pikoState["connected"] as? Bool ?? false)}
+    var passportAnyConnected: Bool {passportConnected || pikoConnected}
+    var pikoPaired: Bool {pikoState["paired"] as? Bool ?? false}
+    var pikoPairingCode: String {pikoState["pairingCode"] as? String ?? ""}
+    var pikoPendingDevice: String {pikoState["pendingDevice"] as? String ?? ""}
+    var pikoBattery: Int {pikoState["battery"] as? Int ?? -1}
+    var pikoFirmware: String {pikoState["firmware"] as? String ?? ""}
+    var pikoError: String {pikoState["error"] as? String ?? ""}
+    var pikoSummary: String {
+        if !pikoError.isEmpty { return pikoError }
+        if pikoConnected {
+            var detail = "已连接"
+            if pikoBattery >= 0 { detail += " · 电量 \(pikoBattery)%" }
+            if !pikoFirmware.isEmpty { detail += " · \(pikoFirmware)" }
+            return detail
+        }
+        if !pikoPairingCode.isEmpty { return "配对码 \(pikoPairingCode)，5 分钟内有效；在工牌配网页填入即可" }
+        if !pikoPendingDevice.isEmpty { return "发现工牌 \(pikoPendingDevice)，点「配对」生成配对码" }
+        if pikoPaired { return "已配对，等待工牌接入同一 Wi-Fi；工牌每 3 秒自动重试" }
+        return "在工牌上发起配对，或点击右侧按钮获取配对码。"
+    }
     var computerAudioEnabled: Bool {audio["computerEnabled"] as? Bool ?? true}
     var computerAudioReady: Bool {audio["computerReady"] as? Bool ?? audioReady}
     var silentOutputs: Bool {audio["silent"] as? Bool ?? false}
-    var canTestPassport: Bool {connected && enabled && passportConnected && passportVoiceEnabled && !muted && !quietActive}
+    var canTestPassport: Bool {connected && enabled && passportAnyConnected && passportVoiceEnabled && !muted && !quietActive}
     func configurePassport(_ patch:[String:Any]) {action(["action":"set_passport_settings","settings":patch])}
     var audio: [String: Any] { snapshot["audio"] as? [String: Any] ?? [:] }
     var device: String { audio["device"] as? String ?? "播报设备" }
@@ -209,8 +236,8 @@ final class VoicePanelModel: ObservableObject {
         if muted { return ("提醒已暂停", "\(max(1, Int(ceil((mutedUntil - now) / 60)))) 分钟后恢复，待处理事项会保留", "pause", 0) }
         if quietActive { return ("定时免打扰", allowQuietApproval ? "保留待办卡片，仅审批提醒可出声" : "待办会保留，时段结束后恢复播报", "moon", 0) }
         if !alerts.isEmpty { return ("\(alerts.count) 件事需要你", "重要的事，听到后再来处理", "bell.badge", 1) }
-        if !eventsAvailable { return ("等待 Codex 连接", "未读到本机任务事件，请先打开 Codex", "link", 0) }
-        if !connectionConfigured { return ("完成提醒已就绪", "连接 Codex，以增加审批与提问提醒", "checkmark", 2) }
+        if !eventsAvailable { return ("等待本地任务连接", "未读到本机任务事件，请先打开 Codex 或 OpenCode", "link", 0) }
+        if !connectionConfigured && !opencodeConfigured { return ("完成提醒已就绪", "连接 Codex 或 OpenCode，以增加审批与提问提醒", "checkmark", 2) }
         return ("一切就绪", "有新结果或需要确认时，会及时提醒你", "checkmark", 2)
     }
     func meta(_ alert: VoiceAlert) -> String {
@@ -552,7 +579,14 @@ struct VoicePanelView: View {
                     Button(model.connectionConfigured ? "重新安装连接" : "连接 Codex", action: model.connectCodex).buttonStyle(PanelButtonStyle())
                 }
                 Text(model.connectionMessage).font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary).fixedSize(horizontal: false, vertical: true)
-            }.padding(13).background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(VoiceTheme.line, lineWidth: 1)).padding(.top, 16)
+                VoiceTheme.line.frame(height: 1).padding(.vertical, 4)
+                HStack {
+                    Text("OpenCode 连接").font(VoiceTheme.font(13, medium: true))
+                    Spacer()
+                    Button(model.opencodeConfigured ? "重新安装连接" : "连接 OpenCode", action: model.connectOpencode).buttonStyle(PanelButtonStyle())
+                }
+                Text(model.opencodeMessage).font(VoiceTheme.font(11)).foregroundColor(VoiceTheme.secondary).fixedSize(horizontal: false, vertical: true)
+            }.padding(13).background(VoiceTheme.paper).clipShape(RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(VoiceTheme.line, lineWidth: 1)).padding(.top, 16)
                 }.padding(.bottom, 2)
             }.frame(height: model.maximumSettingsHeight)
             HStack {

@@ -4,16 +4,10 @@
 
 一个运行在 Mac 菜单栏里的免费本地提醒工具：任务有结果、等待审批或需要回答时，用声音和卡片通知你。有 AI Passport 工牌时，还能把任务、剩余用量和宠物带在身边，按住工牌确认键向电脑听写。
 
-[**下载 Mac 安装包 · v0.9.1-beta.1**](https://github.com/superslash-rico/codex-voice/releases/download/v0.9.1-beta.1/CodexVoice-0.9.1-beta.1-universal.dmg) · [全部下载与固件](https://github.com/superslash-rico/codex-voice/releases/tag/v0.9.1-beta.1) · [AI Passport 入门](docs/AI_PASSPORT.md) · [更新日志](CHANGELOG.md)
-
-> ### ChatGPT / Codex 订阅与充值 → [slashx.shop](https://slashx.shop/)
->
-> 需要开通订阅或了解套餐？访问 **[Codex 订阅服务站](https://slashx.shop/)**，查看 ChatGPT / Codex 套餐、购买流程、卡密兑换和售后说明。网站提供选套餐、联系客服购买、回站兑换的使用指引，具体条件与价格以网站为准。
->
-> **提醒工具免费使用，订阅服务按需选择。** 该网站为第三方独立服务，非 OpenAI 官方网站。本应用的订阅入口只打开固定网址，不附加你的账号、邮箱、用量或登录凭据。
+[下载安装包](https://github.com/Martinsuper/codex-voice/releases) · [AI Passport 入门](docs/AI_PASSPORT.md) · [更新日志](CHANGELOG.md)
 
 <p align="center">
-  <img src="docs/images/home.png" width="380" alt="首页：扬声器、任务提醒、小圆环用量、订阅与充值、AI Passport">
+  <img src="docs/images/home.png" width="380" alt="首页：扬声器、任务提醒、小圆环用量、AI Passport">
   <img src="docs/images/passport.png" width="380" alt="AI Passport 独立配件设置与屏保伙伴">
 </p>
 
@@ -25,12 +19,12 @@
 
 | 能力 | 可以怎样使用 |
 | --- | --- |
-| 本地任务提醒 | 多聊天分别接手、重新播报、稍后提醒、全部接手 |
+| 本地任务提醒 | 多聊天分别接手、重新播报、稍后提醒、全部接手；支持 Codex 与 OpenCode |
 | 可配置声音 | 系统音色、语速、称呼、三档重复间隔、按类别静音或限次 |
 | 暂停与免打扰 | 记住暂停时长，支持跨午夜时段和审批例外 |
 | Codex 剩余用量 | 菜单栏百分比、首页小圆环、详情大圆环与周期、低额度和重置提醒 |
 | 自恢复与登录自启 | 后台服务失败后重试，保留必要状态，登录后启动并重连配件 |
-| 可选 AI Passport | 任务和用量同步、实体键接手、电脑与工牌独立播报 |
+| 可选 AI Passport | 任务和用量同步、实体键接手、电脑与工牌独立播报；蓝牙固件功能完整，Piko Wi-Fi 固件支持按住听写 |
 | 宠物屏保 | 自动跟随 Codex 所选形象；工牌昵称独立配置，新用户默认 **Codex** |
 | 工牌按住听写 | 开始单音后讲话，松开识别，完成双音表示文字已填入；不自动发送 |
 
@@ -40,17 +34,17 @@
 
 ### 1. 下载并打开
 
-从 [Releases](https://github.com/superslash-rico/codex-voice/releases/tag/v0.9.1-beta.1) 下载 `CodexVoice-0.9.1-beta.1-universal.dmg`，打开后将 **Codex 语音提醒.app** 拖到 **Applications / 应用程序**，再从应用程序启动。也提供 ZIP 和 `SHA256SUMS.txt`。
+从 [Releases](https://github.com/Martinsuper/codex-voice/releases) 下载最新的 `CodexVoice-<版本号>-universal.dmg`，打开后将 **Codex 语音提醒.app** 拖到 **Applications / 应用程序**，再从应用程序启动。同一 Release 也提供 ZIP、固件镜像和 `SHA256SUMS.txt` 校验文件。
 
-- 普通提醒、用量及配件同步面向 **macOS 13+**；工牌听写另需 **macOS 26+**。
+- 普通提醒、用量、配件同步与工牌听写均面向 **macOS 13+**；听写识别模型已随应用内置。
 - 同一安装包包含 **Apple 芯片和 Intel** 两种架构；实机测试为 Apple 芯片 Mac，Intel 和旧系统未实机验收。
 - 安装包自带 Python，无需另外安装 Python、Homebrew 或填写 API Key。
 - 当前是**尚未完成 Apple Developer ID 签名与公证的测试版**。首次打开可能被 macOS 提示或阻止；先核对仓库来源和 SHA-256，再按系统“隐私与安全”提示处理。安装包不会关闭 Gatekeeper 或移除隔离属性。
 
-下载文件校验示例（在下载目录运行，对照同一 Release 的 `SHA256SUMS.txt`）：
+下载后建议校验（对照同一 Release 的 `SHA256SUMS.txt`，在下载目录运行）：
 
 ```sh
-shasum -a 256 CodexVoice-0.9.1-beta.1-universal.dmg
+shasum -a 256 CodexVoice-<版本号>-universal.dmg
 ```
 
 ### 2. 连接本机 Codex
@@ -61,6 +55,14 @@ shasum -a 256 CodexVoice-0.9.1-beta.1-universal.dmg
 4. 返回工具首页点击 **试听一下**，听到后点 **已接手**。
 
 安装器备份并合并 `~/.codex/hooks.json`，只添加本工具的观察器，不自动写入信任、不修改审批策略。本版当前适配本机同一用户的 Codex；远程、云端、受管环境及特殊审批不保证覆盖，Codex 内部事件格式更新也可能需要适配。
+
+### 2b. 连接本机 OpenCode（可选）
+
+同时使用 [OpenCode](https://opencode.ai) 的话，进入 **设置 → OpenCode 连接**，安装本地观察插件即可。插件写入 `~/.config/opencode/plugins/codex-voice/`，并在 `cli.json`（及已存在的 `tui.json`）中注册；现有配置会先备份，其他插件保留。**安装后重启 OpenCode 生效。**
+
+- 提醒范围：权限请求（审批）、表单提问、任务完成、执行失败与中断、会话删除。
+- 插件只读取事件元数据并写入本机提醒队列，不联网、不修改 OpenCode 的审批策略；子代理会话的完成不会误报为你的任务完成。
+- 只用 OpenCode、不用 Codex 也能正常使用提醒；两者可以同时连接。
 
 ### 3. 选择声音并打开自启
 
@@ -74,7 +76,7 @@ shasum -a 256 CodexVoice-0.9.1-beta.1-universal.dmg
 
 ### 提醒、接手和专注
 
-首页顺序固定为：**扬声器 → 提醒与待处理 → 剩余用量 → 订阅与充值 → AI Passport**。收到事项时卡片优先显示类别、聊天/项目和下一步。
+首页顺序固定为：**扬声器 → 提醒与待处理 → 剩余用量 → AI Passport**。收到事项时卡片优先显示类别、聊天/项目和下一步。
 
 - **已接手 / 知道了**：停止这一条提醒；实际处理回到原聊天。
 - **全部已接手**：只处理点击时显示的提醒，随后收起面板。
@@ -100,7 +102,7 @@ shasum -a 256 CodexVoice-0.9.1-beta.1-universal.dmg
 
 支持的是 **FoloToy AI Passport，ESP32-C3、8 MB Flash、无 PSRAM** 的这款硬件，不能只按“也是 ESP32”刷入其他板卡。
 
-1. 下载同一 Release 中的 **`AI-Passport-Codex-0.3.0-pets-full.bin`** 和校验文件。
+1. 下载 Release 中的 **`AI-Passport-Codex-<版本号>-pets-full.bin`** 和校验文件。
 2. 按 [AI Passport 手把手指南](docs/AI_PASSPORT.md) 核对设备、刷写和首次配对。
 3. 在首页 **AI Passport → 启用 AI Passport**，允许蓝牙；在 Mac 配对窗口输入工牌的六位码。
 4. 选择电脑、工牌是否播报；默认不启用硬件、不启用工牌语音，不影响普通用户。
@@ -108,7 +110,9 @@ shasum -a 256 CodexVoice-0.9.1-beta.1-universal.dmg
 
 宠物从本机 Codex 当前选择和可读取的资源同步。内置、本地自定义以及已缓存的云端宠物可自动处理；新形象首次需在 Codex 中完成下载。断线、忙碌或资源不可读时保留旧形象，设置页显示进度或原因。这个适配依赖 Codex 的本地配置/资源格式，不能保证未来版本始终兼容。
 
-**按住听写**：macOS 26+，安装简体中文本机模型，并给本应用辅助功能权限。先点电脑输入框，再长按工牌确认；听到开始单音后讲话，松开处理，上扬双音表示文字已经写入。消息由你发送。详细模型设置、权限、失败恢复和按键操作见指南。
+**按住听写**：macOS 13+，识别由应用内置的 Paraformer 中文模型在本机完成，并给本应用辅助功能权限即可；内置模型缺失时自动回退到 macOS 26 的系统听写模型。先点电脑输入框，再长按工牌确认；听到开始单音后讲话，松开处理，上扬双音表示文字已经写入。消息由你发送。详细模型设置、权限、失败恢复和按键操作见指南。
+
+同一块工牌也可以刷第三方 **Piko Wi-Fi 固件**：同一局域网内直连电脑，仅保留按住听写（无宠物屏保、任务卡片和工牌播报），刷写与配对见 [指南路线 C](docs/AI_PASSPORT.md)。蓝牙固件与 Piko 固件可随时互相刷回。
 
 ## 升级、权限与排错
 
@@ -120,22 +124,23 @@ shasum -a 256 CodexVoice-0.9.1-beta.1-universal.dmg
 | 电脑没声音 | 声音输出中的电脑播报、选定设备、系统音量；指定设备断开不会自动换扬声器 |
 | 用量显示 `—` | 官方 Codex 的登录、账号模式、接口支持及最后同步时间 |
 | 找不到工牌 | 配套固件、开机/距离/蓝牙权限；附近先只开一张工牌 |
-| 听写不能落字 | macOS 26+、中文模型、输入框焦点、辅助功能权限；安全输入框可能不支持 |
+| 听写不能落字 | 识别引擎状态（AI Passport → 按住听写 → 设置 → 检查识别引擎）、输入框焦点、辅助功能权限；安全输入框可能不支持 |
 | 升级后听写失效 | 临时签名可能使旧授权失效：在系统“设备控制和数据访问/辅助功能”移除旧项，重新添加当前应用并开启 |
 | 想取回未输入的文字 | AI Passport → 按住听写 → 设置 → 查看保留的听写文字；它保留在当前进程内，退出前复制 |
+| Piko 工牌连不上 | 电脑与工牌同一 Wi-Fi 网段；macOS“本地网络”权限和防火墙入站（TCP 19388 / UDP 19389）；换网络后重新配对 |
 
 ## 本地数据与权限
 
 设置和运行数据位于 `~/Library/Application Support/CodexVoice/`。提醒来自本机 Codex 事件和观察器；用量通过官方客户端只读查询，不自行读取登录令牌、不购买或消耗重置额度。必要的任务元数据和恢复检查点以受限文件权限保存在本机。
 
-启用工牌才申请蓝牙；只有听写落字需要辅助功能/设备控制权限。音频来自工牌麦克风，通过加密配对的 BLE 传到 Mac，用 Apple 本机语音模型识别，不上传录音、不保存音频文件，也不申请 Mac 麦克风权限。文字写入使用临时剪贴板并尽力恢复原内容；若用户期间复制新内容则保留新剪贴板。
+启用工牌才申请蓝牙；只有听写落字需要辅助功能/设备控制权限。蓝牙固件的音频来自工牌麦克风，通过加密配对的 BLE 传到 Mac，用内置的本机语音模型（sherpa-onnx + Paraformer）识别，不上传录音、不保存音频文件，也不申请 Mac 麦克风权限。Piko（Wi-Fi）固件经局域网明文传输原始录音，只适合可信网络。文字写入使用临时剪贴板并尽力恢复原内容；若用户期间复制新内容则保留新剪贴板。
 
-宠物同步读取选中形象对应的配置与本地图片缓存，不读取 Cookie 或认证文件，不保存带签名的下载地址。第三方订阅入口仅在主动点击时打开网站，网页行为遵循网站自身说明。详细数据边界见 [开发与部署说明](docs/DEVELOPMENT.md)。
+宠物同步读取选中形象对应的配置与本地图片缓存，不读取 Cookie 或认证文件，不保存带签名的下载地址。详细数据边界见 [开发与部署说明](docs/DEVELOPMENT.md)。
 
 ## 源码、构建与固件开发
 
 ```sh
-git clone https://github.com/superslash-rico/codex-voice.git
+git clone https://github.com/Martinsuper/codex-voice.git
 cd codex-voice
 PYTHONPATH=src python3 -m unittest discover -s tests
 python3 scripts/verify_native.py
@@ -144,18 +149,18 @@ python3 scripts/verify_app.py '.build/Codex 语音提醒.app'
 python3 scripts/verify_passport_engine.py '.build/Codex 语音提醒.app'
 ```
 
-Mac 源码构建需要 macOS、Xcode Command Line Tools（包含 macOS 26 SDK）和 Python 3.11+。构建产物在 `.build/`，DMG/ZIP 在 `dist/`；构建脚本解包已固定版本和 SHA-256 的官方 Python 安装器，不向系统安装 Python。
+Mac 源码构建需要 macOS、Xcode Command Line Tools（包含 macOS 26 SDK）和 Python 3.11+。构建产物在 `.build/`，DMG/ZIP 在 `dist/`；构建脚本解包已固定版本和 SHA-256 的官方 Python 安装器，并下载固定 SHA-256 的 sherpa-onnx 运行库与 Paraformer 中文识别模型（清单见 `scripts/sherpa-runtime.json`），不向系统安装 Python。
 
 | 位置 | 内容 |
 | --- | --- |
-| [`src/`](src/) | SwiftUI 菜单栏应用、BLE、听写、宠物同步、Python 提醒引擎 |
+| [`src/`](src/) | SwiftUI 菜单栏应用、BLE、Wi-Fi 工牌、听写、宠物同步、Python 提醒引擎 |
 | [`tests/`](tests/)、[`scripts/`](scripts/) | 主机检查、双架构构建、包验证、隔离界面渲染 |
-| [`firmware/ai-passport/`](firmware/ai-passport/) | 可独立构建的 AI Passport 固件完整源码、BSP、资源、锁定依赖、测试及 AI 开发技能 |
-| [`docs/AI_PASSPORT.md`](docs/AI_PASSPORT.md) | 预编译刷写、源码构建、Codex 协助配置、配对、按键、排错 |
+| [`firmware/ai-passport/`](firmware/ai-passport/) | 可独立构建的 AI Passport 蓝牙固件完整源码、BSP、资源、锁定依赖、测试及 AI 开发技能 |
+| [`docs/AI_PASSPORT.md`](docs/AI_PASSPORT.md) | 预编译刷写、源码构建、Codex 协助配置、配对、按键、Piko Wi-Fi 固件、排错 |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | 部署架构、权限、打包、数据与维护 |
-| [`docs/VALIDATION.md`](docs/VALIDATION.md) | 本次发布的检查和尚未验证范围 |
+| [`docs/VALIDATION.md`](docs/VALIDATION.md) | 已发布版本的检查记录和尚未验证范围 |
 
-AI Passport 固件要求 **ESP-IDF 5.5.3**。在其目录阅读 `AGENTS.md` 和中英文 README，再运行 `./tools/validate.sh`；该流程构建、测试并验证合并镜像，**不会自动刷机**。无需提交系统环境、私有聊天、个人配置或构建缓存。所有发布文件通过 Releases 提供，二进制不进入 Git 源码历史。
+AI Passport 蓝牙固件要求 **ESP-IDF 5.5.3**。在其目录阅读 `AGENTS.md` 和中英文 README，再运行 `./tools/validate.sh`；该流程构建、测试并验证合并镜像，**不会自动刷机**。无需提交系统环境、私有聊天、个人配置或构建缓存。所有发布文件通过 Releases 提供，二进制不进入 Git 源码历史。
 
 ## 致谢与许可
 

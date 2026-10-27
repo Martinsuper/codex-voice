@@ -10,7 +10,7 @@ import tempfile
 ROOT=Path(__file__).resolve().parents[1]
 build=ROOT/'.build';build.mkdir(exist_ok=True)
 output=build/'ui-design';output.mkdir(exist_ok=True)
-sources=['VoicePanel.swift','SpeechSettingsView.swift','PanelChrome.swift','UsageView.swift','UsageGauge.swift','SubscriptionLinkView.swift','ReminderSettingsView.swift','PassportProtocol.swift','PassportSettingsView.swift','AppPaths.swift']
+sources=['VoicePanel.swift','SpeechSettingsView.swift','PanelChrome.swift','UsageView.swift','UsageGauge.swift','ReminderSettingsView.swift','PassportProtocol.swift','PassportSettingsView.swift','AppPaths.swift']
 with tempfile.TemporaryDirectory(prefix='ui-render-',dir=build) as temporary:
     root=Path(temporary);app=root/'InterfaceRenderer.app';resources=app/'Contents/Resources';binary=app/'Contents/MacOS/InterfaceRenderer'
     resources.mkdir(parents=True);binary.parent.mkdir()

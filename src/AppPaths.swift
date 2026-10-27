@@ -1,6 +1,11 @@
 import AppKit
 import Foundation
 
+enum StartupError: LocalizedError {
+    case failed(String)
+    var errorDescription: String? { if case .failed(let message) = self { return message }; return nil }
+}
+
 enum AppPaths {
     static let identifier = "local.rico.CodexVoice"
     static let observerID = "codex-voice-observer-v1"
@@ -54,6 +59,21 @@ enum CodexConnection {
         do {
             let (_, data) = try AppPaths.runPython("hook_setup.py", [action, "--app", Bundle.main.bundleURL.path, "--codex-dir", AppPaths.codexHome.path, "--state-dir", AppPaths.runtime.path])
             return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? ["error":"未能读取提醒连接状态"]
+        } catch { return ["error":error.localizedDescription] }
+    }
+}
+
+enum OpenCodeConnection {
+    static var configDir: URL {
+        if let custom = ProcessInfo.processInfo.environment["OPENCODE_CONFIG_DIR"], !custom.isEmpty { return URL(fileURLWithPath: custom, isDirectory: true) }
+        if let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"], !xdg.isEmpty { return URL(fileURLWithPath: xdg, isDirectory: true).appendingPathComponent("opencode", isDirectory: true) }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/opencode", isDirectory: true)
+    }
+    static func run(_ action: String) -> [String: Any] {
+        do {
+            let source = AppPaths.resources.appendingPathComponent("opencode_plugin.js").path
+            let (_, data) = try AppPaths.runPython("opencode_setup.py", [action, "--config-dir", configDir.path, "--state-dir", AppPaths.runtime.path, "--plugin-source", source])
+            return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? ["error":"未能读取 OpenCode 连接状态"]
         } catch { return ["error":error.localizedDescription] }
     }
 }

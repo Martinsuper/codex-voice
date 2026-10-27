@@ -14,8 +14,10 @@ class PassportOutput:
         self.timeout, self.clock = timeout, clock
         self.condition = threading.Condition()
         self.connected = False
+        self.piko_connected = False
         self.dictating = False
         self.ready_at = float("-inf")
+        self.piko_ready_at = float("-inf")
         self.volume = 60
         self.firmware = ""
         self.pet_name_supported = False
@@ -26,7 +28,18 @@ class PassportOutput:
         self.retry_at = 0
 
     def ready(self):
-        return self.connected and self.clock() - self.ready_at < 10
+        return bool(self.route())
+
+    def route(self):
+        """Which badge can announce right now; a live link outranks a muted
+        BLE badge, and BLE keeps priority when both links can play."""
+        now = self.clock()
+        ble_live = self.connected and now - self.ready_at < 10
+        if ble_live and self.volume != 0:
+            return "ble"
+        if self.piko_connected and now - self.piko_ready_at < 10:
+            return "piko"
+        return "ble" if ble_live else ""
 
     def feedback(self, event):
         if not isinstance(event, dict):
@@ -44,6 +57,13 @@ class PassportOutput:
                 if type(value) is int and 0 <= value <= 100:
                     self.volume = value
                 if not self.connected and self.current:
+                    self.current["finished"] = True
+                    self.current["failed"] = True
+            elif event.get("kind") == "piko":
+                self.piko_connected = event.get("connected") is True
+                if self.piko_connected:
+                    self.piko_ready_at = self.clock()
+                elif self.current:
                     self.current["finished"] = True
                     self.current["failed"] = True
             elif event.get("kind") == "pet":
@@ -87,15 +107,16 @@ class PassportOutput:
         if kind not in PHRASES:
             kind = "test"
         with self.condition:
-            if not self.ready() or self.volume == 0 or self.clock() < self.retry_at or self.busy_unlocked():
+            transport = self.route()
+            if not transport or (transport == "ble" and self.volume == 0) or self.clock() < self.retry_at or self.busy_unlocked():
                 return False
             item = {"id": uuid.uuid4().hex, "alertId": alert_id, "started": False,
                     "finished": False, "failed": False, "until": 0}
             self.current = item
-        self.emit({"op": "play", "id": item["id"], "alertId": alert_id, "phrase": kind})
+        self.emit({"op": "play", "id": item["id"], "alertId": alert_id, "phrase": kind, "transport": transport})
         deadline = time.monotonic() + self.timeout
         with self.condition:
-            while self.current is item and not item["started"] and not item["finished"] and self.ready():
+            while self.current is item and not item["started"] and not item["finished"] and self.route() == transport:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     break

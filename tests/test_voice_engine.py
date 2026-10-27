@@ -3,7 +3,7 @@ import json
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from voice_engine import Engine, RolloutAdapter, Speaker, handle_hook, save_preferences
+from voice_engine import Engine, RolloutAdapter, Speaker, handle_agent, handle_hook, save_preferences
 from voice_bridge import effective_reviewer
 
 
@@ -175,6 +175,51 @@ class Tests(unittest.TestCase):
         speaker=Speaker('扬声器',device_uid='same')
         with patch.object(speaker,'stop') as stop:
             self.assertFalse(speaker.set_device('扬声器','same'));stop.assert_not_called()
+
+    def agent(self, raw):
+        handle_agent(raw, self.e)
+    def test_opencode_approval_and_completion_flow(self):
+        self.agent({'action':'add','source':'opencode','thread':'oc-1','requestId':'perm-1','kind':'approval','title':'重构提醒服务','detail':'等待你在 OpenCode 中确认操作','delay':1,'id':'opencode:approval:perm-1'})
+        self.assertEqual(list(self.e.alerts),['opencode:approval:perm-1'])
+        alert=self.e.alerts['opencode:approval:perm-1']
+        self.assertEqual((alert['kind'],alert['requestId'],alert['source']),('approval','perm-1','opencode'))
+        self.assertEqual(alert['nextAt'],1001) # delay 1 honored
+        self.agent({'action':'add','source':'opencode','thread':'oc-1','requestId':'perm-1','kind':'approval','title':'重构提醒服务','id':'opencode:approval:perm-1'})
+        self.assertEqual(len(self.e.alerts),1) # duplicate approval cannot stack
+        self.agent({'action':'resolve_request','source':'opencode','thread':'oc-1','requestId':'perm-1'})
+        self.assertFalse(self.e.alerts)
+        self.agent({'action':'add','source':'opencode','thread':'oc-1','kind':'result','title':'重构提醒服务','detail':'这一轮已经完成','id':'opencode:result:oc-1:turn-9'})
+        self.assertEqual(list(self.e.alerts),['opencode:result:oc-1:turn-9'])
+        self.assertEqual(self.e.monitor['agentLastSeen'],1000)
+    def test_opencode_untrusted_events_are_rejected(self):
+        for raw in [
+            {'action':'add','source':'codex','thread':'oc','kind':'result','id':'x'},
+            {'action':'set_enabled','source':'opencode','enabled':False},
+        ]:
+            self.agent(raw)
+            self.assertFalse(self.e.alerts)
+            self.assertIsNone(self.e.monitor['agentLastSeen']) # envelope itself untrusted
+        for raw in [
+            {'action':'add','source':'opencode','thread':'oc','kind':'test','id':'x'},
+            {'action':'add','source':'opencode','thread':'oc','kind':'result','id':''},
+            {'action':'add','source':'opencode','thread':'oc','kind':'result'},
+        ]:
+            self.agent(raw);self.assertFalse(self.e.alerts)
+    def test_opencode_thread_resolution_and_text_limits(self):
+        self.add('a','oc-1');self.add('b','oc-2')
+        self.agent({'action':'resolve_thread','source':'opencode','thread':'oc-1','reason':'任务已继续'})
+        self.assertEqual(list(self.e.alerts),['b'])
+        self.agent({'action':'add','source':'opencode','thread':'oc-2','kind':'result','title':'任务','detail':'x'*300,'delay':'soon','id':'r1'})
+        alert=self.e.alerts['r1']
+        self.assertEqual(len(alert['detail']),150) # detail clamped
+        self.assertEqual(alert['nextAt'],1000) # invalid delay ignored, speaks immediately
+    def test_opencode_only_machine_stays_connected_in_monitor(self):
+        adapter=RolloutAdapter(self.e,'/tmp/nonexistent-codex-voice')
+        adapter.discover();self.assertEqual(self.e.monitor['state'],'unavailable')
+        self.agent({'action':'add','source':'opencode','thread':'oc-1','kind':'result','id':'r1'})
+        self.now+=10 # discover() rescans at most every 3 seconds
+        adapter.discover();self.assertEqual(self.e.monitor['state'],'connected')
+        self.assertIn('OpenCode',self.e.monitor['detail'])
 
 
 if __name__ == '__main__': unittest.main()

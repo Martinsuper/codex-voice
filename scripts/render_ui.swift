@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 
-enum StartupError:Error {case failed(String)}
 
 @main struct RenderVoiceInterface {
     @MainActor static func main() throws {
@@ -9,7 +8,7 @@ enum StartupError:Error {case failed(String)}
         let arguments=CommandLine.arguments
         let folder=URL(fileURLWithPath:arguments[arguments.firstIndex(of:"--output")!+1],isDirectory:true)
         try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
-        let variants=["ready","tasks","many","low","offline","dark","usage","passport","settings","fresh"]
+        let variants=["ready","tasks","many","low","offline","dark","usage","passport","piko","settings","fresh"]
         for variant in variants {
             let model=VoicePanelModel(),now=Date().timeIntervalSince1970
             model.connectionConfigured=true;model.startupEnabled=true
@@ -33,6 +32,12 @@ enum StartupError:Error {case failed(String)}
             if variant=="fresh" {model.passportSettingsOpen=true;model.snapshot["passport"]=["enabled":true,"connected":false,"voiceEnabled":false,"petName":"Codex","petNameSupported":true]}
             if variant=="usage" {model.usageOpen=true}
             if variant=="passport" {model.passportSettingsOpen=true}
+            if variant=="piko" {
+                model.passportSettingsOpen=true
+                model.snapshot["passport"]=["enabled":true,"connected":false,"voiceEnabled":true,"petName":"Codex"]
+                model.pikoState=["connected":true,"paired":true,"battery":77,"firmware":"piko-0.12.0"]
+                precondition(model.passportAnyConnected && model.canTestPassport, "Wi-Fi connection enables accessory UI")
+            }
             if variant=="settings" {model.settingsOpen=true}
             let dark=variant=="dark"
             app.appearance=NSAppearance(named:dark ? .darkAqua:.aqua)

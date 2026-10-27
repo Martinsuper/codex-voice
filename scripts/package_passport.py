@@ -55,7 +55,7 @@ def main():
             "完整镜像从 0x0 写入，可能重置旧设置和蓝牙配对。\n"
             "分段升级须先核对分区兼容，不要例行整片擦除。\n"
             "完整的中文新手指南：\n"
-            "https://github.com/superslash-rico/codex-voice/blob/v" +
+            "https://github.com/Martinsuper/codex-voice/blob/v" +
             (ROOT / "VERSION").read_text().strip() + "/docs/AI_PASSPORT.md\n")
         files = {}
         for path in sorted(folder.rglob("*")):
