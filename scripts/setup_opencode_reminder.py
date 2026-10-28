@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""Enable Codex Voice reminders for OpenCode and the OpenCode server process.
+"""Backfill Codex Voice reminders for older released app builds.
 
-The app's built-in installer (设置 → OpenCode 连接) covers only the client
-portion: it writes the plugin template into ~/.config/opencode/plugins/
-codex-voice/tui.js and registers that file in cli.json (+ an existing
-tui.json). OpenCode 2 loads cli.json plugins as TUI-only parts, so the server
-process — which is where permission.asked and session.execution.* events
-actually live — never runs the plugin. Registration in the global
-opencode.json `plugins` array plus a server part name at the plugin directory
-root closes that gap.
+New app builds cover all of this automatically: the built-in installer
+(设置 → OpenCode 连接, src/opencode_setup.py) now writes tui.js AND the
+server part index.js, registers tui.js in cli.json (+ an existing tui.json)
+and registers the plugin directory in the global opencode.json(c) `plugins`
+array — which is what makes the OpenCode server process (the home of
+permission.asked and session.* events) run the plugin.
 
-This script runs the app's own installer first (so the template always comes
-from the app bundle), then applies the two idempotent extra steps:
+Run this script only on machines whose installed Codex 语音提醒.app predates
+that installer. It calls the app's own installer first (so the template always
+comes from the app bundle), then applies the two idempotent extra steps:
 
   1. add the plugin directory as a file:// entry in the global
      opencode.json(c) `plugins` array

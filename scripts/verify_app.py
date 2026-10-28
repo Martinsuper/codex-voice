@@ -169,12 +169,22 @@ def main():
         assert opencode_setup.is_file() and (moved/'Contents/Resources/opencode_plugin.js').is_file(),'OpenCode companion scripts must ship in Resources'
         opencode_config=base/'opencode-profile'
         result=json.loads(run([python,opencode_setup,'--install','--config-dir',opencode_config,'--state-dir',runtime,'--plugin-source',moved/'Contents/Resources/opencode_plugin.js'],child))
-        assert result['configured'],result
+        assert result['configured'] and result['globalRegistered'],result
         rendered=(opencode_config/'plugins/codex-voice/tui.js').read_text()
         assert '__CODEX_VOICE_STATE_DIR__' not in rendered and 'codex-voice-opencode-v1' in rendered
-        assert json.loads(run([python,opencode_setup,'--install','--config-dir',opencode_config,'--state-dir',runtime,'--plugin-source',moved/'Contents/Resources/opencode_plugin.js'],child))['configured']
+        server=(opencode_config/'plugins/codex-voice/index.js').read_text()
+        assert 'codex-voice-opencode-v1' in server and '__CODEX_VOICE_STATE_DIR__' not in server,'Server part must be rendered too'
+        opencode_global=opencode_config/'opencode.json'
+        global_plugins=json.loads(opencode_global.read_text())['plugins']
+        plugin_dir_uri=(opencode_config/'plugins/codex-voice').resolve().as_uri()
+        assert plugin_dir_uri in global_plugins,f'Global plugins must register the plugin directory: {global_plugins}'
+        reinstall=json.loads(run([python,opencode_setup,'--install','--config-dir',opencode_config,'--state-dir',runtime,'--plugin-source',moved/'Contents/Resources/opencode_plugin.js'],child))
+        assert reinstall['configured'] and json.loads(opencode_global.read_text())['plugins']==global_plugins,'Reinstall must keep the global plugins array unchanged'
         assert json.loads((opencode_config/'cli.json').read_text()),'Reinstall must keep cli.json a valid object'
-        assert json.loads(run([python,opencode_setup,'--remove','--config-dir',opencode_config,'--state-dir',runtime,'--plugin-source',moved/'Contents/Resources/opencode_plugin.js'],child))['removed']
+        removed=json.loads(run([python,opencode_setup,'--remove','--config-dir',opencode_config,'--state-dir',runtime,'--plugin-source',moved/'Contents/Resources/opencode_plugin.js'],child))
+        assert removed['removed'] and not removed['globalRegistered']
+        assert plugin_dir_uri not in json.dumps(json.loads(opencode_global.read_text())),'Remove must deregister the plugin directory'
+        assert not (opencode_config/'plugins/codex-voice').exists(),'Remove must delete the plugin files'
         verify_speech_preferences(python, moved/'Contents/Resources', runtime, codex, child)
         print(json.dumps({'relocation':True,'cleanPath':True,'embeddedPython':info['pythonVersion'],'universalBinaries':True,'deepSignatureValid':True,'isolatedHookInstall':True,'hookTrustUnchanged':True,'bundledHookEntry':True,'opencodeInstallIdempotent':True,'speechPreferencesPersistAndRestart':True,'invalidSpeechSettingsRejected':True,'pauseDurationPersistsAndRestarts':True,'invalidPauseDurationRejected':True,'usageResetPreferencePersistsAndRestarts':True,'invalidUsageResetSettingRejected':True,'lowUsagePreferencesPersistAndRestart':True,'invalidLowUsageThresholdRejected':True,'reminderRulesPersistAndRestart':True,'quietHoursPersistAndRestart':True}))
 
