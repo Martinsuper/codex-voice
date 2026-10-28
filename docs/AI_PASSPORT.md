@@ -1,6 +1,6 @@
 # AI Passport：从拿到硬件到连上 Codex
 
-[返回项目首页](../README.md) · [下载本版全部文件](https://github.com/Martinsuper/codex-voice/releases/tag/v0.9.1-beta.1) · [固件源码](../firmware/ai-passport/)
+[返回项目首页](../README.md) · [下载本版全部文件](https://github.com/Martinsuper/codex-voice/releases/tag/v0.9.1-beta.1)
 
 这份指南面向第一次刷固件的用户。没有工牌时只安装 Mac 工具即可；本版的电脑端和工牌配件已整合为一个软件。
 
@@ -75,41 +75,9 @@ python -m esptool --chip esp32c3 --port /dev/cu.usbmodemXXXX --baud 460800 write
 
 在**已经核对兼容**后，固件 ZIP 内的三份程序文件可按 `flash_args` 指定偏移写入，不写 NVS、PHY 和宠物区。不要在未知布局上直接运行升级命令。0.3.0 引入 2 MiB 宠物资源区；从旧版或别的应用迁移，应预期可能需要重新配对和重新同步宠物。
 
-## 路线 B：让 Codex 协助从源码构建
+## 路线 B：从源码构建
 
-推荐把下面这段发给运行在你自己电脑上的 Codex。它需要你允许访问下载的项目目录；技能安装、环境安装、刷机等动作按实际情况确认，不能把文档本身当作授权。
-
-```text
-我是硬件新手，想把 FoloToy AI Passport 配置为 Codex 语音提醒配件。
-我的硬件是 ESP32-C3、8 MB Flash、无 PSRAM 的 AI Passport。
-请先阅读这个仓库的 README.md、docs/AI_PASSPORT.md，
-以及 firmware/ai-passport/AGENTS.md 和 README.zh_CN.md。
-先检查源码版本、ESP-IDF 5.5.3 环境、数据线和 USB 端口。
-如缺少五项 passport-* 技能，请说明安装位置和作用，再按我的授权安装。
-请使用 tools/validate.sh 构建和验证完整镜像，报告校验值和分区布局。
-不要自动整片擦除，不要读取或上传我的登录凭据、聊天记录和配对码。
-刷写前把设备、端口、固件版本和对设置的影响告诉我，等我同意再写入。
-刷好后一步步指导我完成 Mac 工具安装、蓝牙配对、声音、宠物同步和听写测试。
-```
-
-手动构建也可以。克隆仓库后在固件目录操作；ESP-IDF 的安装说明见 [环境准备](../firmware/ai-passport/docs/development/engineering/environment-setup.md)：
-
-```sh
-git clone https://github.com/Martinsuper/codex-voice.git
-cd codex-voice/firmware/ai-passport
-# 先安装/激活 ESP-IDF v5.5.3，下面路径换成你自己的安装目录。
-source /path/to/esp-idf-v5.5.3/export.sh
-idf.py --version
-./tools/validate.sh
-```
-
-构建需要 CMake、Ninja、对应编译器以及锁定的 Managed Components；首次下载需要联网。完整 gate 使用 `sdkconfig.defaults` 在隔离构建目录生成配置，不覆盖你本地 `sdkconfig`。产物为 `build/FoloToy-AI-Passport-full.bin`，并保留内容寻址归档及匹配的调试符号：
-
-```sh
-python3 tools/archive_firmware.py verify build/firmware/<完整镜像的SHA256>
-```
-
-`idf.py build` 是增量编译，不替代完整合并镜像验证。编译通过不等于工牌实测通过。构建命令不会自动刷机；确认后可按路线 A 刷入自己的完整镜像。
+固件源码已迁出本仓库，现由对应的客户端项目维护：`/Volumes/W_W/claude-workspace/piko-firmware/passport`，历史源码可通过本仓库的 Git 提交记录查看。构建仍要求 ESP-IDF 5.5.3；进入该项目目录，按其自带的 README 与开发文档完成环境准备、构建和完整镜像验证，再按路线 A 刷写。构建命令不会自动刷机；编译通过不等于工牌实测通过。
 
 ## 路线 C：使用 Piko 固件（Wi-Fi 直连听写）
 
@@ -202,5 +170,4 @@ Piko 路径的限制：同一局域网且明文传输（仅适合可信家庭/�
 
 - [FoloToy AI Passport 项目](https://github.com/FoloToy/ai-passport)
 - [Espressif：esptool 写入命令](https://docs.espressif.com/projects/esptool/en/latest/esp32c3/esptool/basic-commands.html)
-- [本版固件布局与存储策略](../firmware/ai-passport/docs/development/engineering/firmware-layout.md)
 - [OpenAI Docs：Hooks 与信任](https://learn.chatgpt.com/docs/hooks)

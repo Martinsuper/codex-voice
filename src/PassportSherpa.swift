@@ -15,7 +15,9 @@ enum PassportSherpaError: LocalizedError {
 /// Bundled offline Paraformer recognition; audio never leaves the machine and
 /// no recording is written. The recognizer is created once and reused, so only
 /// the first utterance pays the model load.
-final class PassportSherpaSession {
+// The recognizer is used only on `queue`; retaining the session in each job
+// keeps the C pointer alive until decoding has finished.
+final class PassportSherpaSession: @unchecked Sendable {
     private let recognizer: OpaquePointer
     private let queue = DispatchQueue(label: "codex-voice.passport-sherpa", qos: .userInitiated)
     private static let lock = NSLock()
@@ -57,7 +59,7 @@ final class PassportSherpaSession {
 
     func transcribe(_ pcm: [Int16]) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
-            queue.async { [recognizer] in
+            queue.async { [self] in
                 do { continuation.resume(returning: try Self.decode(recognizer: recognizer, pcm: pcm)) }
                 catch { continuation.resume(throwing: error) }
             }

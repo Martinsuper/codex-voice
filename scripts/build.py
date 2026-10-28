@@ -182,7 +182,7 @@ def main():
     info["NSBluetoothAlwaysUsageDescription"] = "连接你的 AI Passport 工牌，同步任务状态、播放提醒并接收按键操作。"
     info["NSLocalNetworkUsageDescription"] = "在同一局域网内接收 Piko 固件工牌的语音听写。"
     (app/"Contents/Info.plist").write_bytes(plistlib.dumps(info))
-    for name in ["voice_engine.py", "passport_output.py", "accessory_settings.py", "pet_source.py", "speech_settings.py", "codex_usage.py", "reminder_rules.py", "reminder_recovery.py", "voice_bridge.py", "hook_setup.py", "opencode_setup.py", "opencode_plugin.js", "runtime_info.py"]:
+    for name in ["voice_engine.py", "engine_runtime.py", "event_adapters.py", "speaker.py", "rollout_adapter.py", "passport_output.py", "accessory_settings.py", "pet_source.py", "speech_settings.py", "codex_usage.py", "reminder_rules.py", "reminder_recovery.py", "voice_bridge.py", "hook_setup.py", "opencode_setup.py", "opencode_plugin.js", "runtime_info.py"]:
         shutil.copy2(ROOT/"src"/name, resources/name)
     shutil.copy2(ROOT/"assets/passport/ai-passport-front.png",resources/"AIPassport.png")
     shutil.copy2(ROOT/"assets/passport/nomi-idle.png",resources/"PetNOMI.png")
@@ -195,7 +195,7 @@ def main():
     sherpa_model = resources/"sherpa/paraformer"; sherpa_model.mkdir(parents=True)
     for name in sherpa["modelFiles"]:
         shutil.copy2(sherpa["model"]/name, sherpa_model/name)
-    compile_universal(build, app/"Contents/MacOS/CodexVoice", [ROOT/"src"/name for name in ["VoiceApp.swift","AppPaths.swift","VoiceAppRuntime.swift","VoicePanel.swift","SpeechSettingsView.swift","PanelChrome.swift","UsageView.swift","UsageGauge.swift","ReminderSettingsView.swift","ServiceRecovery.swift","PassportProtocol.swift","PassportAnnouncement.swift","PikoProtocol.swift","PikoLink.swift","PassportLink.swift","PassportAudio.swift","PassportSpeech.swift","PassportSherpa.swift","PassportDictation.swift","PassportInput.swift","PassportSettingsView.swift","PassportPetAsset.swift","PassportPetSync.swift"]], ["AppKit","SwiftUI","CoreBluetooth","CryptoKit","Speech","AVFoundation","ApplicationServices","ImageIO","Network"], extra=["-I", str(sherpa["include"]), "-L", str(sherpa["libs"]), "-lsherpa-onnx-c-api", "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
+    compile_universal(build, app/"Contents/MacOS/CodexVoice", [ROOT/"src"/name for name in ["VoiceApp.swift","AppPaths.swift","VoiceAppRuntime.swift","EngineMessages.swift","EngineProcess.swift","EngineRecovery.swift","VoicePanel.swift","SpeechSettingsView.swift","PanelChrome.swift","UsageView.swift","UsageGauge.swift","ReminderSettingsView.swift","ServiceRecovery.swift","PassportProtocol.swift","PassportAnnouncement.swift","PikoProtocol.swift","PikoLink.swift","PassportLink.swift","PassportAudio.swift","PassportSpeech.swift","PassportSherpa.swift","PassportDictation.swift","PassportInput.swift","PassportSettingsView.swift","PassportPetAsset.swift","PassportPetSync.swift"]], ["AppKit","SwiftUI","CoreBluetooth","CryptoKit","Speech","AVFoundation","ApplicationServices","ImageIO","Network"], extra=["-I", str(sherpa["include"]), "-L", str(sherpa["libs"]), "-lsherpa-onnx-c-api", "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
     compile_universal(build, resources/"AudioDeviceInfo", [ROOT/"src/AudioDeviceInfo.swift"], ["CoreAudio"])
     expanded = acquire_runtime(args.cache.resolve())
     binaries = embed_runtime(expanded, app/"Contents/Frameworks/Python.framework")

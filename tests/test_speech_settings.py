@@ -147,7 +147,7 @@ invalid line''')
         speaker = Speaker(device_provider=lambda: {'connected': True}, voice_provider=lambda: [{'id': voice}])
         engine = Engine(speaker)
         self.assertTrue(engine.configure_speech({'voice': voice, 'rate': 210}))
-        with patch('voice_engine.subprocess.Popen') as popen:
+        with patch('speaker.subprocess.Popen') as popen:
             self.assertTrue(speaker.speak('a', '-o 不应成为命令参数'))
             args = popen.call_args.args[0]
             self.assertEqual(args, ['/usr/bin/say', '-v', voice, '-r', '210', '--', '-o 不应成为命令参数'])
@@ -156,7 +156,7 @@ invalid line''')
         speaker = Speaker(device_provider=lambda: {'connected': True}, voice_provider=lambda: [{'id': 'Tingting'}])
         engine = Engine(speaker, speech_settings={'voice': 'Removed voice'})
         engine.add({'id': 'a'})
-        with patch('voice_engine.subprocess.Popen') as popen:
+        with patch('speaker.subprocess.Popen') as popen:
             engine.tick()
             popen.assert_not_called()
         self.assertEqual(engine.alerts['a']['count'], 0)

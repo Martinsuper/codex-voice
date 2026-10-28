@@ -83,6 +83,15 @@ class PassportTests(unittest.TestCase):
         self.assertTrue(device.speak("a", "result"))
         self.assertEqual(sent[0]["transport"], "ble")
 
+    def test_piko_stays_available_until_disconnect(self):
+        now = [100.0]
+        device = PassportOutput(clock=lambda: now[0])
+        device.feedback({"kind": "piko", "connected": True})
+        now[0] += 60
+        self.assertEqual(device.route(), "piko")
+        device.feedback({"kind": "piko", "connected": False})
+        self.assertEqual(device.route(), "")
+
     def test_piko_disconnect_fails_the_running_play(self):
         device, sent = self.piko_output()
         device.emit = lambda event: device.feedback(

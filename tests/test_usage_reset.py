@@ -188,7 +188,7 @@ class AnnouncementTests(unittest.TestCase):
         speaker = Speaker("测试扬声器", device_provider=lambda: info, voice_provider=lambda: [{"id": "Tingting"}])
         engine = Engine(speaker, lambda: self.now, speech_settings={"rate": 230, "address": "Rico"})
         engine.usage_reset(self.event)
-        with patch("voice_engine.subprocess.Popen") as popen:
+        with patch("speaker.subprocess.Popen") as popen:
             engine.tick()
             args = popen.call_args.args[0]
         self.assertEqual(args[args.index("-v")+1], "Tingting")

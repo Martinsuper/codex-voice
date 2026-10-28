@@ -2,7 +2,7 @@ import Foundation
 import CoreBluetooth
 import AppKit
 
-final class PassportLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
+final class PassportLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate, AccessoryCommandSink {
     static let service = CBUUID(string: "EA37F001-4E2B-47EF-9501-6D79B932A001")
     static let rxID = CBUUID(string: "EA37F002-4E2B-47EF-9501-6D79B932A001")
     static let txID = CBUUID(string: "EA37F003-4E2B-47EF-9501-6D79B932A001")

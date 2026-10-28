@@ -2,6 +2,11 @@ import Foundation
 import Speech
 import AVFoundation
 
+// The converter reads this buffer only during the synchronous convert call.
+private struct ConverterInput: @unchecked Sendable {
+    let buffer: AVAudioPCMBuffer
+}
+
 enum PassportSpeechError: LocalizedError {
     case unavailable, model, format, empty
     var errorDescription: String? {
@@ -50,10 +55,11 @@ final class PassportSpeechSession {
         else {
             guard let converter = AVAudioConverter(from: inputFormat, to: format),
                   let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(Double(pcm.count)*format.sampleRate/16000)+1024) else { throw PassportSpeechError.format }
+            let converterInput = ConverterInput(buffer: input)
             var supplied = false; var error: NSError?
             let status = converter.convert(to: output, error: &error) { _, status in
                 if supplied { status.pointee = .endOfStream; return nil }
-                supplied = true; status.pointee = .haveData; return input
+                supplied = true; status.pointee = .haveData; return converterInput.buffer
             }
             guard status != .error, error == nil, output.frameLength > 0 else { throw error ?? PassportSpeechError.format }
             buffer = output

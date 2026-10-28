@@ -25,7 +25,6 @@ AI Passport 使用应用专用的 BLE 服务，不能用普通系统扬声器/�
 - `scripts/verify_app.py`：移动路径、干净 PATH、运行时、签名和配置持久化。
 - `scripts/verify_passport_engine.py`：打包后的引擎、模拟工牌应答及独立设置迁移；它不等于真实 BLE 测试。
 - `scripts/render_ui.py`：在临时独立应用中渲染真实 SwiftUI 视图的演示状态，不启动生产引擎。
-- `firmware/ai-passport/`：可独立构建的 AI Passport 固件快照，内含 BSP、默认资源、依赖锁、完整验证工具与项目技能。
 
 需要 macOS、Xcode Command Line Tools（macOS 26 SDK）、Python 3.11+ 和下载运行时的网络访问：
 
@@ -43,11 +42,7 @@ python3 scripts/verify_passport_engine.py '.build/Codex 语音提醒.app'
 
 ## 配件固件
 
-固件来源为 FoloToy AI Passport 的明确提交加本项目的 Codex 配件实现，来源及变更见 [固件 README](../firmware/ai-passport/README.zh_CN.md)。固件构建要求 ESP-IDF 5.5.3，遵循目录内 `AGENTS.md` 和 `tools/validate.sh`。
-
-发布文件包含完整镜像以及分段镜像、`flash_args`、分区信息、校验值；匹配 ELF/MAP 仅保留本地，避免不必要的调试资料公开。源码和测试可用于复现，编译时间/路径等元数据可能使自行构建的字节和发布包不同，不能仅凭版本名替代校验。
-
-当前固件保留 NVS、PHY、factory、2 MiB 宠物资源分区。完整镜像从 `0x0` 写入可能重置存储设置；分段升级只在分区已确认兼容后使用。合并镜像校验工具会验证偏移、边界、不重叠和镜像头，构建不会自动操作 USB。
+固件源码已迁出本仓库，对应的客户端项目位于 `/Volumes/W_W/claude-workspace/piko-firmware/passport`，历史源码可通过 Git 提交记录查看。发布文件仍包含完整镜像、分段镜像、`flash_args`、分区信息与校验值；完整镜像从 `0x0` 写入可能重置存储设置，分段升级只在分区确认兼容后使用。
 
 ## 数据边界
 
@@ -72,7 +67,7 @@ python3 scripts/verify_passport_engine.py '.build/Codex 语音提醒.app'
 
 ## 发布步骤
 
-1. 核对版本、变更、源码和既有用户设置迁移；运行 Mac 测试/构建与固件完整 gate。
+1. 核对版本、变更、源码和既有用户设置迁移；运行 Mac 测试与构建。
 2. 检查公开文件列表和敏感内容；只选择源码、公开文档与演示截图。保留第三方许可。
 3. 将 Mac DMG/ZIP、固件完整镜像/固件 ZIP、说明和 SHA-256 上传到同一个 GitHub Release。
 4. 让下载附件与发布 tag 中的源码、文档版本一致；不要静默覆盖已公开的同名资产。

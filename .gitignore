@@ -12,3 +12,7 @@ __pycache__/
 
 # Local archives and machine-specific working data
 local/
+
+# Local tool state
+.commandcode/
+.zcode/

@@ -126,7 +126,7 @@ class Tests(unittest.TestCase):
         speaker=Speaker('小爱音箱',device_provider=lambda:info,voice_provider=lambda:[{'id':'Tingting'}])
         engine=Engine(speaker,lambda:1000)
         engine.event({'action':'set_audio_device','device':'USB 扬声器','uid':'usb-speaker'})
-        with patch('voice_engine.subprocess.Popen') as popen:
+        with patch('speaker.subprocess.Popen') as popen:
             self.assertTrue(speaker.speak('test','老板，测试。'))
             args=popen.call_args.args[0]
             self.assertEqual(args[args.index('-a')+1],'99')
@@ -156,7 +156,7 @@ class Tests(unittest.TestCase):
     def test_disconnected_selected_uid_keeps_other_choices_without_fallback(self):
         info={'connected':False,'devices':[{'name':'Mac mini扬声器','uid':'builtin','connected':True}],'defaultName':'Mac mini扬声器'}
         speaker=Speaker('蓝牙音箱',device_uid='bluetooth-speaker',device_provider=lambda:info)
-        with patch('voice_engine.subprocess.Popen') as popen:
+        with patch('speaker.subprocess.Popen') as popen:
             self.assertFalse(speaker.speak('a','老板，测试。'));popen.assert_not_called()
         status=speaker.audio_status()
         self.assertEqual(status['selectedUID'],'bluetooth-speaker')
@@ -166,7 +166,7 @@ class Tests(unittest.TestCase):
         info={'connected':True,'name':'Mac mini扬声器','id':79,'defaultName':'Mac mini扬声器','devices':[]}
         speaker=Speaker('小爱音箱',device_provider=lambda:info,device_uid='old-speaker',voice_provider=lambda:[{'id':'Tingting'}])
         self.assertTrue(speaker.set_device(''))
-        with patch('voice_engine.subprocess.Popen') as popen:
+        with patch('speaker.subprocess.Popen') as popen:
             self.assertTrue(speaker.speak('a','老板，测试。'))
             self.assertNotIn('-a',popen.call_args.args[0])
         self.assertTrue(speaker.audio_status()['followSystem'])

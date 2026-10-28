@@ -4,6 +4,8 @@
 
 一个运行在 Mac 菜单栏里的免费本地提醒工具：任务有结果、等待审批或需要回答时，用声音和卡片通知你。有 AI Passport 工牌时，还能把任务、剩余用量和宠物带在身边，按住工牌确认键向电脑听写。
 
+> **备注**：当前项目对应的客户端是这个项目：`/Volumes/W_W/claude-workspace/piko-firmware/passport`
+
 [下载安装包](https://github.com/Martinsuper/codex-voice/releases) · [AI Passport 入门](docs/AI_PASSPORT.md) · [更新日志](CHANGELOG.md)
 
 <p align="center">
@@ -155,12 +157,12 @@ Mac 源码构建需要 macOS、Xcode Command Line Tools（包含 macOS 26 SDK）
 | --- | --- |
 | [`src/`](src/) | SwiftUI 菜单栏应用、BLE、Wi-Fi 工牌、听写、宠物同步、Python 提醒引擎 |
 | [`tests/`](tests/)、[`scripts/`](scripts/) | 主机检查、双架构构建、包验证、隔离界面渲染 |
-| [`firmware/ai-passport/`](firmware/ai-passport/) | 可独立构建的 AI Passport 蓝牙固件完整源码、BSP、资源、锁定依赖、测试及 AI 开发技能 |
+| AI Passport 固件源码 | 已迁出本仓库，现位于 `/Volumes/W_W/claude-workspace/piko-firmware/passport`（见文首备注） |
 | [`docs/AI_PASSPORT.md`](docs/AI_PASSPORT.md) | 预编译刷写、源码构建、Codex 协助配置、配对、按键、Piko Wi-Fi 固件、排错 |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | 部署架构、权限、打包、数据与维护 |
 | [`docs/VALIDATION.md`](docs/VALIDATION.md) | 已发布版本的检查记录和尚未验证范围 |
 
-AI Passport 蓝牙固件要求 **ESP-IDF 5.5.3**。在其目录阅读 `AGENTS.md` 和中英文 README，再运行 `./tools/validate.sh`；该流程构建、测试并验证合并镜像，**不会自动刷机**。无需提交系统环境、私有聊天、个人配置或构建缓存。所有发布文件通过 Releases 提供，二进制不进入 Git 源码历史。
+AI Passport 蓝牙固件源码已从本仓库移除，对应客户端项目位于 `/Volumes/W_W/claude-workspace/piko-firmware/passport`；历史源码仍可通过 Git 提交记录查看。所有发布文件通过 Releases 提供，二进制不进入 Git 源码历史。
 
 ## 致谢与许可
 

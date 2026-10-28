@@ -21,7 +21,7 @@
 
 ## 固件
 
-Build: PASS — 从公开目录 `firmware/ai-passport/` 运行完整 ESP-IDF 5.5.3 gate，验证 8 MB、镜像头、分区偏移/边界/不重叠、完整合并镜像与匹配归档。
+Build: PASS — 当时从仓库内 `firmware/ai-passport/` 运行完整 ESP-IDF 5.5.3 gate（该目录现已迁出，此项为历史验证），验证 8 MB、镜像头、分区偏移/边界/不重叠、完整合并镜像与匹配归档。
 
 Host tests: PASS — 仓库/文档/工作流检查，Codex 模型、音频、音效、宠物存储与故障注入，以及原有 BSP/导航/校验/归档/技能安装器测试。
 

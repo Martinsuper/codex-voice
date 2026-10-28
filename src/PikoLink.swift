@@ -9,8 +9,9 @@ import AppKit
 /// `queue`; dictation, UI and engine callbacks hop out.
 enum PikoAnnounceError: Error { case unavailable }
 
-final class PikoLink: NSObject {
+final class PikoLink: NSObject, AccessoryCommandSink {
     var voiceSink: PikoVoiceSink?
+    var onEnter: () -> Bool = { false }
     var onStatus: ([String: Any]) -> Void = { _ in }
     let sendAction: ([String: Any]) -> Void
     var dictationBusy: () -> Bool = { false }
@@ -43,6 +44,15 @@ final class PikoLink: NSObject {
     // Reminder state push and announce playback.
     private let epoch = PassportProtocol.makeEpoch()
     private var snapshot: [String: Any] = [:]
+    private var codexForeground = false
+
+    func setCodexForeground(_ value: Bool) {
+        queue.async { [weak self] in
+            guard let self, self.codexForeground != value else { return }
+            self.codexForeground = value
+            self.sendStateNow()
+        }
+    }
     private var lastState = Date.distantPast
     private var announce: (id: String, pcm: Data, offset: Int, consumed: Int, started: Bool, ended: Bool, at: Date)?
     private var synthesis: (id: String, generation: UUID, at: Date)?
@@ -364,6 +374,16 @@ final class PikoLink: NSObject {
             return
         }
         switch type {
+        case "key_enter":
+            DispatchQueue.main.async { [weak self, weak connection] in
+                guard let self, let connection else { return }
+                let ok = self.onEnter()
+                self.queue.async {
+                    guard self.authenticated, self.deviceConnection === connection else { return }
+                    self.send(frame: ["v": 1, "type": "key_result", "ok": ok,
+                                      "message": ok ? "已发送回车" : "输入框已变化或没有可提交的文字"], on: connection)
+                }
+            }
         case "heartbeat":
             let newBattery = frame["battery"] as? Int ?? -1
             let newFirmware = String((frame["firmware"] as? String ?? "").prefix(40))
@@ -440,7 +460,7 @@ final class PikoLink: NSObject {
             DispatchQueue.main.async { [weak self] in self?.voiceSink?.fail(id, "音频上传中断，请重试") }
         }
         if authenticated, let connection = deviceConnection, now.timeIntervalSince(lastState) >= 2,
-           let state = try? JSONSerialization.data(withJSONObject: PassportProtocol.state(snapshot, epoch: epoch)),
+           let state = try? JSONSerialization.data(withJSONObject: PassportProtocol.state(snapshot, epoch: epoch, codexForeground: codexForeground)),
            state.count < PassportPiko.maxMessageBytes {
             let metadata = NWProtocolWebSocket.Metadata(opcode: .text)
             let context = NWConnection.ContentContext(identifier: "piko-json", metadata: [metadata])
@@ -531,9 +551,9 @@ final class PikoLink: NSObject {
 
     private func sendStateNow() {
         guard authenticated, let connection = deviceConnection,
-              let encoded = try? JSONSerialization.data(withJSONObject: PassportProtocol.state(snapshot, epoch: epoch)),
+              let encoded = try? JSONSerialization.data(withJSONObject: PassportProtocol.state(snapshot, epoch: epoch, codexForeground: codexForeground)),
               encoded.count < PassportPiko.maxMessageBytes else { return }
-        send(frame: PassportProtocol.state(snapshot, epoch: epoch), on: connection)
+        send(frame: PassportProtocol.state(snapshot, epoch: epoch, codexForeground: codexForeground), on: connection)
         lastState = Date()
     }
 

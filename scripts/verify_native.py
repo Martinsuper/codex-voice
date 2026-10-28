@@ -7,12 +7,14 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = {
+    "engine_messages": (["EngineMessages.swift"], ["Foundation"]),
+    "engine_process": (["EngineProcess.swift"], ["Foundation"]),
     "protocol": (["PassportProtocol.swift"], ["Foundation"]),
     "audio": (["PassportAudio.swift"], ["Foundation"]),
     "clipboard": (["PassportInput.swift", "PassportAudio.swift"], ["AppKit", "ApplicationServices"]),
     "pet": (["PassportPetAsset.swift", "PassportPetSync.swift", "PassportProtocol.swift", "AppPaths.swift"], ["AppKit", "ImageIO", "CryptoKit"]),
     "piko": (["PikoProtocol.swift"], ["Foundation", "CryptoKit", "Security"]),
-    "piko_link": (["PikoProtocol.swift", "PassportProtocol.swift", "PassportAnnouncement.swift", "AppPaths.swift", "PikoLink.swift"], ["Foundation", "Network", "AppKit", "CryptoKit", "Security"]),
+    "piko_link": (["PikoProtocol.swift", "PassportProtocol.swift", "PassportAnnouncement.swift", "AppPaths.swift", "EngineMessages.swift", "PikoLink.swift"], ["Foundation", "Network", "AppKit", "CryptoKit", "Security"]),
     "announcement": (["PassportAnnouncement.swift", "PassportProtocol.swift", "PikoProtocol.swift", "AppPaths.swift"], ["Foundation", "AppKit", "CryptoKit"]),
 }
 

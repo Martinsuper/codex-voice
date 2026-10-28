@@ -53,6 +53,8 @@ func sendText(_ task: URLSessionWebSocketTask, _ object: [String: Any]) {
         }
         let status = Box<[String: Any]>([:])
         link.onStatus = { status.set($0) }
+        let enterCount = Box(0)
+        link.onEnter = { enterCount.set(enterCount.get() + 1); return true }
         let started = Box<[String]>([]), ended = Box<[String]>([])
         let cancelled = Box<[String]>([]), failed = Box<[String]>([])
         let audio = Box<Data>(Data())
@@ -89,6 +91,12 @@ func sendText(_ task: URLSessionWebSocketTask, _ object: [String: Any]) {
         precondition((welcome["capabilities"] as? [String])?.contains("voice-long-upload-v1") == true)
         precondition(welcome["token"] == nil, "reconnect must not reissue a token")
         precondition(waitFor { status.get()["connected"] as? Bool == true }, "connected status")
+        link.setCodexForeground(true)
+        precondition(waitFor { texts.get().contains { $0.contains("\"codexForeground\":true") } }, "foreground change pushed")
+        link.setCodexForeground(false)
+        sendText(task, ["v": 1, "type": "key_enter"])
+        precondition(waitFor { enterCount.get() == 1 }, "authenticated enter reaches dictation")
+        precondition(waitFor { texts.get().contains { $0.contains("key_result") } }, "enter result")
 
         // One voice round: voice_start, binary PCM, voice_end, terminal status.
         sendText(task, ["v": 1, "type": "voice_start", "id": "t-voice-1", "sampleRate": 16000, "channels": 1, "format": "pcm_s16le"])

@@ -45,35 +45,35 @@ class AccessoryTests(unittest.TestCase):
         for computer,badge_voice in [(True,False),(False,True),(True,True),(False,False)]:
             with self.subTest(computer=computer,badge=badge_voice):
                 s,sent=self.speaker(computer=computer,voice=badge_voice)
-                with patch('voice_engine.subprocess.Popen',return_value=Process()) as say:
+                with patch('speaker.subprocess.Popen',return_value=Process()) as say:
                     started=s.speak_kind('a','测试','result')
                 self.assertEqual(say.call_count,int(computer));self.assertEqual(len([e for e in sent if e['op']=='play']),int(badge_voice));self.assertEqual(started,computer or badge_voice)
     def test_badge_offline_does_not_stop_computer(self):
         s,sent=self.speaker(remote=False)
-        with patch('voice_engine.subprocess.Popen',return_value=Process()) as say:self.assertTrue(s.speak_kind('a','测试','result'))
+        with patch('speaker.subprocess.Popen',return_value=Process()) as say:self.assertTrue(s.speak_kind('a','测试','result'))
         self.assertEqual(say.call_count,1);self.assertTrue(s.busy())
     def test_computer_failure_still_delivers_badge(self):
         s,sent=self.speaker()
-        with patch('voice_engine.subprocess.Popen',side_effect=OSError):self.assertTrue(s.speak_kind('a','测试','question'))
+        with patch('speaker.subprocess.Popen',side_effect=OSError):self.assertTrue(s.speak_kind('a','测试','question'))
         self.assertEqual(sent[0]['op'],'play')
     def test_disable_one_route_keeps_other_playing(self):
         s,sent=self.speaker();p=Process()
-        with patch('voice_engine.subprocess.Popen',return_value=p):self.assertTrue(s.speak_kind('a','测试','result'))
+        with patch('speaker.subprocess.Popen',return_value=p):self.assertTrue(s.speak_kind('a','测试','result'))
         s.configure_computer(False);self.assertTrue(p.stopped);self.assertTrue(s.passport.busy())
         self.assertFalse(any(e['op']=='stop' for e in sent))
         s.configure_passport({'voiceEnabled':False});self.assertFalse(s.passport.busy());self.assertTrue(s.passport.ready())
     def test_badge_voice_off_retains_connection_and_dictation_gate(self):
         s,sent=self.speaker(computer=True,voice=False)
         self.assertTrue(s.passport_status()['connected']);s.passport_feedback({'kind':'dictation','active':True});self.assertTrue(s.busy())
-        with patch('voice_engine.subprocess.Popen') as say:self.assertFalse(s.speak_kind('a','测试','result'))
+        with patch('speaker.subprocess.Popen') as say:self.assertFalse(s.speak_kind('a','测试','result'))
         say.assert_not_called();self.assertEqual(sent,[])
     def test_dictionary_capture_interrupts_computer_without_new_reminder(self):
         s,sent=self.speaker();p=Process()
-        with patch('voice_engine.subprocess.Popen',return_value=p):self.assertTrue(s.speak_kind('a','测试','result'))
+        with patch('speaker.subprocess.Popen',return_value=p):self.assertTrue(s.speak_kind('a','测试','result'))
         s.passport_feedback({'kind':'dictation','active':True});self.assertTrue(p.stopped)
     def test_passport_test_does_not_also_play_computer(self):
         s,sent=self.speaker();e=Engine(s,now=lambda:1000);e.event({'action':'test','target':'passport'})
-        with patch('voice_engine.subprocess.Popen') as say:e.tick()
+        with patch('speaker.subprocess.Popen') as say:e.tick()
         say.assert_not_called();self.assertEqual(len([x for x in sent if x['op']=='play']),1);self.assertEqual(next(iter(e.alerts.values()))['count'],1)
     def test_badge_not_in_computer_output_picker(self):
         s,_=self.speaker();self.assertNotIn(PASSPORT_UID,[d['uid'] for d in s.audio_status()['devices']])
@@ -82,7 +82,7 @@ class AccessoryTests(unittest.TestCase):
         self.assertFalse(e.event({'action':'set_passport_settings','settings':{'enabled':'off'}}));self.assertTrue(s.passport_settings.enabled)
     def test_changing_computer_output_does_not_replay_delivered_badge(self):
         s,sent=self.speaker();e=Engine(s,now=lambda:1000);e.event({'action':'test'})
-        with patch('voice_engine.subprocess.Popen',return_value=Process()):e.tick()
+        with patch('speaker.subprocess.Popen',return_value=Process()):e.tick()
         alert=next(iter(e.alerts.values()));self.assertEqual(alert['count'],1)
         e.event({'action':'set_audio_device','device':'Other','uid':'other'})
         self.assertEqual(alert['count'],1);self.assertEqual(alert['nextAt'],1005)

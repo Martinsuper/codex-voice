@@ -7,6 +7,7 @@ final class PassportDictation: NSObject {
     var busyChanged: (Bool) -> Void = { _ in }
     private(set) var activeID: String?
     private var target: PassportInputTarget?
+    private var enterTarget: PassportInputTarget?
     private var generation = 0
     private var stream = PassportAudioStream()
     private var recording: PassportRecording?
@@ -150,6 +151,7 @@ final class PassportDictation: NSObject {
             fail: { [weak self] id, message in self?.pikoFail(id, message) })
     }
     private func pikoStart(_ id: String, _ sampleRate: Int, _ channels: Int, _ format: String) {
+        enterTarget = nil
         guard PassportPiko.validID(id) else { return }
         guard sampleRate == 16000, channels == 1, format == "pcm_s16le" else {
             pikoSend(PassportPiko.voiceError(id, "仅支持 16kHz 单声道语音")); return
@@ -236,6 +238,10 @@ final class PassportDictation: NSObject {
                 let inserted = await self.target!.insert(text, generation: { self.generation }, diagnostic: self.inputDiagnostic)
                 guard self.activeID == id else { return }
                 if inserted {
+                    if let original = self.target, let current = PassportInputTarget.capture(generation: self.generation),
+                       original.generation == self.generation, original.pid == current.pid, CFEqual(original.element, current.element) {
+                        self.enterTarget = current
+                    }
                     self.pikoSend(PassportPiko.voiceTranscript(id, text))
                     self.pikoSend(PassportPiko.voiceStatus(id, "done"))
                 } else {
@@ -248,6 +254,18 @@ final class PassportDictation: NSObject {
                 self.pikoFail(id, (error as? LocalizedError)?.errorDescription ?? "没有识别成功，请靠近工牌重试")
             }
         }
+    }
+
+    func pikoEnter() -> Bool {
+        guard activeID == nil, let target = enterTarget else { return false }
+        enterTarget = nil
+        guard target.unchanged(generation: generation), CGPreflightPostEventAccess(),
+              let source = CGEventSource(stateID: .privateState),
+              let down = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false) else { return false }
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+        return true
     }
     private func pikoCancel(_ id: String) {
         guard activeID == id else { return }

@@ -240,7 +240,7 @@ class LowAnnouncementTests(unittest.TestCase):
         speaker=Speaker("chosen",device_provider=lambda:{"connected":True,"id":42},voice_provider=lambda:[{"id":"Tingting"}])
         engine=Engine(speaker,lambda:self.now,speech_settings={"address":"Rico","rate":230})
         engine.update_usage_low(self.detector.detect(self.value,20,self.now))
-        with patch("voice_engine.subprocess.Popen") as popen:
+        with patch("speaker.subprocess.Popen") as popen:
             engine.tick(); args=popen.call_args.args[0]
         self.assertEqual(args[args.index("-v")+1],"Tingting")
         self.assertEqual(args[args.index("-r")+1],"230")

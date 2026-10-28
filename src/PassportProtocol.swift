@@ -17,7 +17,7 @@ enum PassportProtocol {
                 || [0x2014, 0x2026].contains(n) ? value : UnicodeScalar(0x25A1)!
         }))
     }
-    static func state(_ raw: [String: Any], epoch: String) -> [String: Any] {
+    static func state(_ raw: [String: Any], epoch: String, codexForeground: Bool = false) -> [String: Any] {
         let all = raw["alerts"] as? [[String: Any]] ?? []
         let ranked = all.sorted {
             let rank: [String: Int] = ["approval": 0, "question": 1, "blocked": 2, "result": 3, "test": 4]
@@ -49,7 +49,7 @@ enum PassportProtocol {
         } : []
         let quotas = !windows.isEmpty && windows.count <= 2 && parsedQuotas.count == windows.count ? parsedQuotas : []
         let remaining = quotas.compactMap { $0["remaining"] as? Int }.min() ?? -1
-        return ["v": 1, "type": "state", "epoch": epoch, "enabled": (raw["enabled"] as? Bool ?? true) && (accessory["voiceEnabled"] as? Bool ?? true),
+        return ["v": 1, "type": "state", "epoch": epoch, "codexForeground": codexForeground, "enabled": (raw["enabled"] as? Bool ?? true) && (accessory["voiceEnabled"] as? Bool ?? true),
                 "petName":title(accessory["petName"] as? String ?? "Codex"),
                 "muted": (raw["mutedUntil"] as? Double ?? 0) > Date().timeIntervalSince1970,
                 "quiet": (raw["quietHours"] as? [String: Any])?["active"] as? Bool ?? false,

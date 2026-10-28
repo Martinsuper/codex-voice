@@ -37,7 +37,10 @@ class PassportOutput:
         ble_live = self.connected and now - self.ready_at < 10
         if ble_live and self.volume != 0:
             return "ble"
-        if self.piko_connected and now - self.piko_ready_at < 10:
+        # PikoLink reports authentication and disconnection explicitly and
+        # monitors the device heartbeat itself. A stable connection does not
+        # emit repeated status updates, so it must not expire after ten seconds.
+        if self.piko_connected:
             return "piko"
         return "ble" if ble_live else ""
 

@@ -8,7 +8,6 @@
 | `tests/` | 自动检查 | 跟随 Git 提交 |
 | `scripts/` | 构建、图标生成、独立运行验证 | 跟随 Git 提交 |
 | `docs/` | 安装、发行与验证说明、隔离演示截图 | 跟随 Git 提交 |
-| `firmware/ai-passport/` | 工牌完整固件源码、BSP、资源与开发技能 | 跟随 Git 提交；生成固件只上传 Releases |
 | `dist/` | DMG、ZIP 与校验文件 | 上传到 GitHub Releases |
 | `.build/` | 生成的应用与构建中间文件 | 本地生成，已忽略 |
 | `.build-cache/` | 已校验的官方运行环境下载缓存 | 本地保留，已忽略 |

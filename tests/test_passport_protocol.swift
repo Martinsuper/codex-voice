@@ -18,6 +18,9 @@ import Foundation
                            ["id":"secondary","remainingPercent":81,"windowMinutes":10080,"resetsAt":Date().timeIntervalSince1970+86400]]],
             "account": ["email": "private@example.invalid"], "speech": ["voices": ["private voice data"]]]
         let state = PassportProtocol.state(snapshot, epoch: "0123456789abcdef")
+        precondition(state["codexForeground"] as? Bool == false)
+        let foreground = PassportProtocol.state(snapshot, epoch: "0123456789abcdef", codexForeground: true)
+        precondition(foreground["codexForeground"] as? Bool == true)
         let visible = state["alerts"] as! [[String: Any]]
         precondition(visible.count == 8)
         precondition(visible[0]["kind"] as? String == "approval")

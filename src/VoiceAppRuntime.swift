@@ -22,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let model = VoicePanelModel()
     var process: Process?
     var input: Pipe?
-    var buffer = Data()
+    var engineMessages = EngineMessages()
     var knownIDs = Set<String>()
     var runtimeURL: URL?
     var clock: Timer?
@@ -47,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     lazy var piko: PikoLink = {
         let link = PikoLink(credentialStore: PikoCredentialStore(directory: AppPaths.runtime.path)) { [weak self] event in self?.send(event) }
         link.voiceSink = dictation.pikoSink
+        link.onEnter = { [weak self] in self?.dictation.pikoEnter() ?? false }
         link.onStatus = { [weak self] state in self?.model.pikoState = state }
         link.dictationBusy = { [weak self] in self?.dictation.activeID != nil }
         link.speechSynthesizer = { text, completion in PassportAnnouncement.synthesize(text, completion: completion) }
@@ -94,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(willSleep), name: NSWorkspace.willSleepNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(didWake), name: NSWorkspace.didWakeNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self,selector:#selector(frontApplicationChanged),name:NSWorkspace.didActivateApplicationNotification,object:nil)
+        piko.setCodexForeground(NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.openai.codex")
     }
 
     func buildWindow() {
@@ -167,102 +169,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if arrowChanged || moved { window.invalidateShadow(); recordPanelState("anchor-adjusted") }
     }
 
-    func startEngine() {
-        guard !quitting else { return }
-        guard process?.isRunning != true else { return }
-        do { try AppPaths.prepare() }
-        catch { model.serviceError = error.localizedDescription; return }
-        runtimeURL = AppPaths.runtime
-        model.serviceError = "正在启动提醒服务…"
-        model.serviceRecovering = true
-        let p = Process()
-        p.executableURL = AppPaths.python
-        p.environment = AppPaths.environment
-        p.arguments = ["-s", AppPaths.resources.appendingPathComponent("voice_engine.py").path, "--state-dir", AppPaths.runtime.path, "--codex-dir", AppPaths.codexHome.path, "--usage"]
-        let inputPipe = Pipe(), outputPipe = Pipe(), errorPipe = Pipe()
-        p.standardInput = inputPipe; p.standardOutput = outputPipe; p.standardError = errorPipe
-        outputPipe.fileHandleForReading.readabilityHandler = { [weak self, weak p] handle in
-            let chunk = handle.availableData
-            if chunk.isEmpty { return }
-            DispatchQueue.main.async { if let self, let p, self.process === p { self.receive(chunk) } }
-        }
-        errorPipe.fileHandleForReading.readabilityHandler = { handle in _ = handle.availableData }
-        p.terminationHandler = { [weak self] stopped in
-            DispatchQueue.main.async {
-                guard let self, self.process === stopped, !self.quitting else { return }
-                self.cleanupEngineGroup(stopped)
-                if !self.stoppingForRecovery { self.scheduleRecovery("提醒服务意外停止") }
-            }
-        }
-        do {
-            try p.run(); process = p; input = inputPipe; buffer = Data()
-            engineStartedAt = Date(); lastSnapshotAt = .distantPast; healthySince = nil; engineGroup = nil
-        } catch { scheduleRecovery("提醒服务启动失败") }
-    }
-
-    func cleanupEngineGroup(_ stopped: Process) {
-        if let group = engineGroup, group > 0, group == stopped.processIdentifier { _ = Darwin.kill(-group, SIGTERM) }
-        engineGroup = nil
-    }
-
-    func scheduleRecovery(_ reason: String) {
-        guard !quitting else { return }
-        restartWork?.cancel()
-        healthySince = nil
-        guard let delay = restartPolicy.nextDelay(at: Date()) else {
-            stoppingForRecovery = process?.isRunning == true
-            if let old = process, old.isRunning {
-                send(["action":"quit"])
-                old.terminate()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
-                    if old.isRunning {
-                        if self?.engineGroup == old.processIdentifier { _ = Darwin.kill(-old.processIdentifier, SIGKILL) }
-                        else { _ = Darwin.kill(old.processIdentifier, SIGKILL) }
-                    }
-                }
-            }
-            model.serviceRecovering = false
-            model.serviceError = "连续恢复失败，请点击「重新连接」再试。"
-            updateStatusItem(); recordPanelState("service-recovery-limit")
-            return
-        }
-        model.serviceRecovering = true
-        model.serviceError = reason + "，正在自动恢复…"
-        let old = process
-        let wasRunning = old?.isRunning == true
-        stoppingForRecovery = true
-        if wasRunning, let old {
-            send(["action":"quit"])
-            try? input?.fileHandleForWriting.close()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                if old.isRunning { old.terminate() }
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
-                if old.isRunning {
-                    if self?.engineGroup == old.processIdentifier { _ = Darwin.kill(-old.processIdentifier, SIGKILL) }
-                    else { _ = Darwin.kill(old.processIdentifier, SIGKILL) }
-                }
-            }
-        }
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, !self.quitting else { return }
-            self.restartWork = nil
-            self.stoppingForRecovery = false
-            if self.process?.isRunning == true { self.scheduleRecovery("提醒服务尚未停止"); return }
-            self.startEngine()
-        }
-        restartWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + max(delay, wasRunning ? 5 : 0), execute: work)
-        updateStatusItem(); recordPanelState("service-recovering")
-    }
-
-    func manualReconnect() {
-        guard !quitting else { return }
-        restartPolicy.reset(); restartWork?.cancel(); restartWork = nil
-        if process?.isRunning == true { scheduleRecovery("正在重新连接") }
-        else { stoppingForRecovery = false; startEngine() }
-    }
-
     @objc func willSleep() {
         dictation.reset()
         sleeping = true
@@ -298,17 +204,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func receive(_ data: Data) {
-        buffer.append(data)
-        while let index = buffer.firstIndex(of: 10) {
-            let line = buffer[..<index]
-            buffer.removeSubrange(...index)
-            guard let value = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
-            if let command = value["passportCommand"] as? [String: Any] {
-                if command["transport"] as? String == "piko" { piko.command(command) }
-                else { passport.command(command) }
+        for value in engineMessages.append(data) {
+            switch EngineMessage(value) {
+            case .accessoryCommand(let command):
+                let sink: AccessoryCommandSink = AccessoryTransport(command: command) == .piko ? piko : passport
+                sink.command(command)
+                continue
+            case .error(let error):
+                model.serviceError = error; continue
+            case .snapshot:
+                break
+            case .invalid:
                 continue
             }
-            if let error = value["error"] as? String { model.serviceError = error; continue }
             let alerts = (value["alerts"] as? [[String: Any]] ?? []).compactMap(VoiceAlert.init)
             let ids = Set(alerts.map(\.id))
             let changed = ids != knownIDs
@@ -444,6 +352,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hidePanel("application-deactivated",restoreFocus:false)
     }
     @objc func frontApplicationChanged(_ notification:Notification) {
+        if let app=notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+            piko.setCodexForeground(app.bundleIdentifier == "com.openai.codex")
+        }
         guard !quitting,!NSApp.isActive,window?.isVisible==true,
               let app=notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
               app.processIdentifier != ProcessInfo.processInfo.processIdentifier else {return}
