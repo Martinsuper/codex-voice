@@ -121,6 +121,15 @@ struct PassportInputTarget {
             }
             if Task.isCancelled { return finish("cancelledAfterPaste",false) }
         }
+        // GPU 终端（Ghostty 等）不会把粘贴后的完整内容暴露给 AX value：字段值
+        // 对粘贴验证“看起来没变”。要求 AX 确认会放弃这些目标并阻塞后续的
+        // 回车发送，因此对已知终端应用，粘贴事件已按正常 HID 路径送达，
+        // 直接接受本次插入。
+        let terminalApps = ["Ghostty","iTerm2","Terminal","Alacritty","kitty","WezTerm","Warp"]
+        if terminalApps.contains(appName) {
+            report["terminal"] = appName
+            return finish("terminalPasteAccepted",true)
+        }
         return finish("pasteNotConfirmed",false)
     }
 }
