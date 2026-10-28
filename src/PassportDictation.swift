@@ -239,7 +239,9 @@ final class PassportDictation: NSObject {
                 guard self.activeID == id else { return }
                 if inserted {
                     if let original = self.target, let current = PassportInputTarget.capture(generation: self.generation),
-                       original.generation == self.generation, original.pid == current.pid, CFEqual(original.element, current.element) {
+                       original.generation == self.generation, original.pid == current.pid {
+                        // 插入文字后焦点元素可能被应用重建，不强求 CFEqual；
+                        // 同一前台进程即可作为回车的目标。
                         self.enterTarget = current
                     }
                     self.pikoSend(PassportPiko.voiceTranscript(id, text))
@@ -259,7 +261,7 @@ final class PassportDictation: NSObject {
     func pikoEnter() -> Bool {
         guard activeID == nil, let target = enterTarget else { return false }
         enterTarget = nil
-        guard target.unchanged(generation: generation), CGPreflightPostEventAccess(),
+        guard target.sameField(generation: generation), CGPreflightPostEventAccess(),
               let source = CGEventSource(stateID: .privateState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false) else { return false }

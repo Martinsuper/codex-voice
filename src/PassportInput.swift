@@ -66,6 +66,19 @@ struct PassportInputTarget {
               current.value == value, current.range == range else { return false }
         return true
     }
+    /// 回车发送只需要确认焦点还在同一个可输入的界面上：前台应用不变、
+    /// 系统能读到焦点元素时要求仍是同一个元素。不比较字段内容和选区，
+    /// 因为粘贴后应用可能自行改写文本（自动格式化、终端提示行、IME 等），
+    /// 严格比较会误判“输入框已变化”，导致听写后按回车无法提交。
+    func sameField(generation: Int) -> Bool {
+        guard self.generation == generation else { return false }
+        guard let front = NSWorkspace.shared.frontmostApplication else { return false }
+        guard front.processIdentifier == pid,
+              let current = Self.capture(generation: generation) else { return false }
+        // Electron 等应用在插入文字后可能重建焦点元素：新旧元素不可比较时，
+        // 只要归属同一个前台应用就接受，避免误拦应该发出的回车。
+        return CFEqual(current.element, element) || current.pid == pid
+    }
     // One normal Paste command, no Return. Preserve all pasteboard formats;
     // do not overwrite a newer user copy while restoring the previous contents.
     @MainActor func insert(_ text: String, generation: @escaping () -> Int,
