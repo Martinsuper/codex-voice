@@ -36,29 +36,33 @@ struct PassportInputTarget {
         var result: CFTypeRef?
         return AXUIElementCopyAttributeValue(element, name as CFString, &result) == .success ? result : nil
     }
-    static func capture(generation: Int) -> Self? {
-        guard AXIsProcessTrusted(),
-              let front = NSWorkspace.shared.frontmostApplication,
-              front.processIdentifier != ProcessInfo.processInfo.processIdentifier,
-              let focused = attribute(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute),
-              CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
+    /// 抓取失败时返回人类可读的原因；capture(generation:) 复用本判定。
+    static func captureDetailed(generation: Int) -> (target: Self?, reason: String) {
+        guard AXIsProcessTrusted() else { return (nil, "未开启辅助功能权限") }
+        guard let front = NSWorkspace.shared.frontmostApplication else { return (nil, "没有前台应用") }
+        guard front.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return (nil, "焦点还在提醒应用上") }
+        guard let focused = attribute(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute),
+              CFGetTypeID(focused) == AXUIElementGetTypeID() else { return (nil, "读不到系统焦点元素（\(front.localizedName ?? "电脑")）") }
         let element = focused as! AXUIElement
         var pid: pid_t = 0
-        guard AXUIElementGetPid(element, &pid) == .success, pid == front.processIdentifier,
-              attribute(element, kAXEnabledAttribute) as? Bool != false,
-              attribute(element, kAXSubroleAttribute) as? String != kAXSecureTextFieldSubrole,
-              let role = attribute(element, kAXRoleAttribute) as? String,
-              [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(role),
-              let value = attribute(element, kAXValueAttribute) as? String,
-              let selection = attribute(element, kAXSelectedTextRangeAttribute),
-              CFGetTypeID(selection) == AXValueGetTypeID() else { return nil }
+        guard AXUIElementGetPid(element, &pid) == .success, pid == front.processIdentifier else { return (nil, "焦点元素不属于前台应用 \(front.localizedName ?? "?")") }
+        guard attribute(element, kAXEnabledAttribute) as? Bool != false else { return (nil, "焦点元素不可输入") }
+        guard attribute(element, kAXSubroleAttribute) as? String != kAXSecureTextFieldSubrole else { return (nil, "焦点在密码框上") }
+        guard let role = attribute(element, kAXRoleAttribute) as? String else { return (nil, "读不到焦点元素类型") }
+        guard [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(role) else { return (nil, "焦点不是文本输入框（\(role)）") }
+        guard let value = attribute(element, kAXValueAttribute) as? String else { return (nil, "读不到焦点框的文本内容") }
+        guard let selection = attribute(element, kAXSelectedTextRangeAttribute),
+              CFGetTypeID(selection) == AXValueGetTypeID() else { return (nil, "读不到焦点框的光标位置") }
         var range = CFRange()
         guard AXValueGetValue(selection as! AXValue, .cfRange, &range), range.location >= 0, range.length >= 0,
               range.location <= (value as NSString).length,
-              range.length <= (value as NSString).length-range.location else { return nil }
-        return Self(element: element, pid: pid, value: value,
+              range.length <= (value as NSString).length-range.location else { return (nil, "光标位置无效") }
+        return (Self(element: element, pid: pid, value: value,
                     range: NSRange(location: range.location, length: range.length), generation: generation,
-                    appName: front.localizedName ?? "电脑")
+                    appName: front.localizedName ?? "电脑"), "")
+    }
+    static func capture(generation: Int) -> Self? {
+        captureDetailed(generation: generation).target
     }
     func unchanged(generation: Int) -> Bool {
         guard self.generation == generation, let current = Self.capture(generation: generation),

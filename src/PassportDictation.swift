@@ -14,6 +14,7 @@ final class PassportDictation: NSObject {
     private var speech: AnyObject?
     private var preparation: Task<Void, Never>?
     private var captureRetry: Task<Void, Never>?
+    private var captureDiagnosis = ""
     private var work: Task<Void, Never>?
     private var deadline: Timer?
     private var observer: NSObjectProtocol?
@@ -165,19 +166,26 @@ final class PassportDictation: NSObject {
         pcmData = Data(); pikoEnded = false; pikoCaptureError = ""
         if !AXIsProcessTrusted() || !CGPreflightPostEventAccess() {
             pikoCaptureError = "请在电脑开启辅助功能权限"
-        } else if let target = PassportInputTarget.capture(generation: generation) {
-            self.target = target
         } else {
-            // 一次快照可能瞬时失败（焦点刚切换、Electron 重建 AX 元素、
-            // AX 服务短暂不可用等）：录音期间持续重试，抓到为止。
-            pikoCaptureError = "正在定位输入焦点…"
-            captureRetry = Task { @MainActor [weak self] in
-                while let self, self.activeID == id, self.target == nil, !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 300_000_000)
-                    guard self.activeID == id, !Task.isCancelled else { return }
-                    if let target = PassportInputTarget.capture(generation: self.generation) {
-                        self.target = target
-                        self.pikoCaptureError = ""
+            let first = PassportInputTarget.captureDetailed(generation: generation)
+            if let target = first.target {
+                self.target = target
+            } else {
+                // 一次快照可能瞬时失败（焦点刚切换、Electron 重建 AX 元素、
+                // AX 服务短暂不可用等）：录音期间持续重试，抓到为止。
+                pikoCaptureError = "正在定位输入焦点…"
+                captureDiagnosis = first.reason
+                captureRetry = Task { @MainActor [weak self] in
+                    while let self, self.activeID == id, self.target == nil, !Task.isCancelled {
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        guard self.activeID == id, !Task.isCancelled else { return }
+                        let attempt = PassportInputTarget.captureDetailed(generation: self.generation)
+                        if let target = attempt.target {
+                            self.target = target
+                            self.pikoCaptureError = ""
+                        } else {
+                            self.captureDiagnosis = attempt.reason
+                        }
                     }
                 }
             }
@@ -239,7 +247,9 @@ final class PassportDictation: NSObject {
                 guard self.activeID == id, !Task.isCancelled else { return }
                 if self.target == nil {
                     let pending = self.pikoCaptureError.isEmpty || self.pikoCaptureError.hasPrefix("正在")
-                    let note = pending ? "没有找到电脑上可输入的位置，请点选输入框后重试" : self.pikoCaptureError
+                    let note = pending
+                        ? "没有找到电脑上可输入的位置（\(self.captureDiagnosis.isEmpty ? "点选的焦点不可输入" : self.captureDiagnosis)），请点选输入框后重试"
+                        : self.pikoCaptureError
                     self.retain(text, note: note + "。已保留本次文字，可手动复制。")
                     self.pikoSend(PassportPiko.voiceStatus(id, "text_only", message: note + "，文字已保留在电脑"))
                     self.reset(); return
@@ -296,6 +306,7 @@ final class PassportDictation: NSObject {
     func reset() {
         activeID = nil; preparation?.cancel(); preparation = nil; work?.cancel(); work = nil
         captureRetry?.cancel(); captureRetry = nil
+        captureDiagnosis = ""
         deadline?.invalidate(); deadline = nil
         if let old = speech as? PassportRecognition { Task { await old.cancel() } }
         speech = nil; target = nil; recording = nil; ended = nil; attempting = false; stream = PassportAudioStream()
