@@ -42,8 +42,21 @@ struct PassportInputTarget {
         guard let front = NSWorkspace.shared.frontmostApplication else { return (nil, "没有前台应用") }
         guard front.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return (nil, "焦点还在提醒应用上") }
         guard let focused = attribute(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute),
-              CFGetTypeID(focused) == AXUIElementGetTypeID() else { return (nil, "读不到系统焦点元素（\(front.localizedName ?? "电脑")）") }
-        let element = focused as! AXUIElement
+              CFGetTypeID(focused) == AXUIElementGetTypeID() else {
+            // Electron 应用（ChatGPT、VS Code 等）默认只为读屏工具暴露辅助功能：
+            // 设置 AXManualAccessibility 请求其开启，然后重试一次快照。
+            let app = AXUIElementCreateApplication(front.processIdentifier)
+            AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+            if let retried = attribute(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute),
+               CFGetTypeID(retried) == AXUIElementGetTypeID() {
+                return target(retried as! AXUIElement, front: front, generation: generation)
+            }
+            return (nil, "\(front.localizedName ?? "该应用")未暴露辅助功能，已请求开启")
+        }
+        return target(focused as! AXUIElement, front: front, generation: generation)
+    }
+    /// 校验焦点元素的归属、类型与可读性，合格则构造目标。
+    private static func target(_ element: AXUIElement, front: NSRunningApplication, generation: Int) -> (target: Self?, reason: String) {
         var pid: pid_t = 0
         guard AXUIElementGetPid(element, &pid) == .success, pid == front.processIdentifier else { return (nil, "焦点元素不属于前台应用 \(front.localizedName ?? "?")") }
         guard attribute(element, kAXEnabledAttribute) as? Bool != false else { return (nil, "焦点元素不可输入") }
